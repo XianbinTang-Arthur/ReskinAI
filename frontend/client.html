@@ -45,127 +45,149 @@
           <p>A psychologically safe workflow for scar-aware exploration.</p>
         </header>
 
-        <div class="grid two">
-          <article class="card">
-            <h3>Session</h3>
-            <button id="user-session-btn" class="btn" type="button">Create User Session</button>
-            <p class="meta" id="user-session-meta">No session yet.</p>
-          </article>
+        <nav class="stepper" id="client-stepper" aria-label="Client workflow steps">
+          <button class="step-btn active" data-step-target="intake" type="button">1. Intake</button>
+          <button class="step-btn" data-step-target="upload" type="button">2. Upload</button>
+          <button class="step-btn" data-step-target="preference" type="button">3. Preferences</button>
+          <button class="step-btn" data-step-target="generation" type="button">4. Gallery</button>
+          <button class="step-btn" data-step-target="collaboration" type="button">5. Collaboration</button>
+        </nav>
 
-          <article class="card">
-            <h3>Consent</h3>
-            <form id="consent-form">
-              <label>Policy Version</label>
-              <input name="policy_version" value="consent-v1" />
-              <label class="inline">
-                <input type="checkbox" name="disclaimer_accepted" checked />
-                I understand this is non-medical concept support.
-              </label>
-              <button class="btn" type="submit">Save Consent</button>
-            </form>
-            <p class="meta" id="consent-meta">No consent yet.</p>
-          </article>
+        <article class="step-panel active" id="step-intake">
+          <div class="grid two">
+            <article class="card">
+              <h3>Session</h3>
+              <button id="user-session-btn" class="btn" type="button">Create User Session</button>
+              <p class="meta" id="user-session-meta">No session yet.</p>
+            </article>
 
-          <article class="card wide upload-card">
-            <h3>Upload Experience</h3>
-            <p class="hint">Private and secure. Delete anytime.</p>
-            <form id="upload-form">
-              <label>Consent ID</label>
-              <input name="consent_id" placeholder="auto-filled after consent" />
-              <label class="upload-zone" id="upload-dropzone">
-                <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
-                <span class="upload-title">Drop image here or click to choose</span>
-                <span class="upload-sub" id="upload-file-label">PNG, JPG, WEBP</span>
-              </label>
-              <button class="btn" type="submit">Upload Image</button>
-            </form>
-            <p class="meta" id="upload-meta">No upload yet.</p>
-          </article>
+            <article class="card">
+              <h3>Consent</h3>
+              <form id="consent-form">
+                <label>Policy Version</label>
+                <input name="policy_version" value="consent-v1" />
+                <label class="inline">
+                  <input type="checkbox" name="disclaimer_accepted" checked />
+                  I understand this is non-medical concept support.
+                </label>
+                <button class="btn" type="submit">Save Consent</button>
+              </form>
+              <p class="meta" id="consent-meta">No consent yet.</p>
+            </article>
+          </div>
+        </article>
 
-          <article class="card wide">
-            <h3>Style Preferences</h3>
-            <div class="choice-row">
-              <button class="choice-chip" data-pref-target="style" data-pref-value="fine line botanical" type="button">
-                Fine line botanical
-              </button>
-              <button class="choice-chip" data-pref-target="style" data-pref-value="minimal geometric" type="button">
-                Minimal geometric
-              </button>
-              <button class="choice-chip" data-pref-target="style" data-pref-value="organic abstract" type="button">
-                Organic abstract
-              </button>
-              <button class="choice-chip" data-pref-add="motifs" data-pref-value="lotus" type="button">Lotus</button>
-              <button class="choice-chip" data-pref-add="motifs" data-pref-value="wind" type="button">Wind</button>
-              <button class="choice-chip" data-pref-add="meaning_keywords" data-pref-value="rebirth" type="button">
-                Rebirth
-              </button>
+        <article class="step-panel upload-card" id="step-upload">
+          <h3>Upload Experience</h3>
+          <p class="hint">Private and secure. Delete anytime.</p>
+          <form id="upload-form">
+            <label>Consent ID</label>
+            <input name="consent_id" placeholder="auto-filled after consent" />
+            <label class="upload-zone" id="upload-dropzone">
+              <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
+              <span class="upload-title">Drop image here or click to choose</span>
+              <span class="upload-sub" id="upload-file-label">PNG, JPG, WEBP</span>
+            </label>
+            <button class="btn" type="submit">Upload Image</button>
+          </form>
+          <p class="meta" id="upload-meta">No upload yet.</p>
+        </article>
+
+        <article class="step-panel" id="step-preference">
+          <h3>Style Preferences</h3>
+          <div class="choice-row">
+            <button class="choice-chip" data-pref-target="style" data-pref-value="fine line botanical" type="button">
+              Fine line botanical
+            </button>
+            <button class="choice-chip" data-pref-target="style" data-pref-value="minimal geometric" type="button">
+              Minimal geometric
+            </button>
+            <button class="choice-chip" data-pref-target="style" data-pref-value="organic abstract" type="button">
+              Organic abstract
+            </button>
+            <button class="choice-chip" data-pref-add="motifs" data-pref-value="lotus" type="button">Lotus</button>
+            <button class="choice-chip" data-pref-add="motifs" data-pref-value="wind" type="button">Wind</button>
+            <button class="choice-chip" data-pref-add="meaning_keywords" data-pref-value="rebirth" type="button">
+              Rebirth
+            </button>
+          </div>
+          <form id="preference-form" class="pref-form">
+            <div>
+              <label>Style</label>
+              <input name="style" value="floral linework" required />
             </div>
-            <form id="preference-form" class="pref-form">
-              <div>
-                <label>Style</label>
-                <input name="style" value="floral linework" required />
-              </div>
-              <div>
-                <label>Motifs (comma separated)</label>
-                <input name="motifs" value="lotus,wind,contour" />
-              </div>
-              <div>
-                <label>Meaning Keywords</label>
-                <input name="meaning_keywords" value="rebirth,strength,peace" />
-              </div>
-              <div>
-                <label>Avoid List</label>
-                <input name="avoid_list" value="weapons,dark skull" />
-              </div>
-              <div>
-                <label>Mood</label>
-                <input name="mood" value="calm" />
-              </div>
-              <button class="btn" type="submit">Save Preference</button>
-            </form>
-            <p class="meta" id="preference-meta">No preference yet.</p>
-          </article>
+            <div>
+              <label>Motifs (comma separated)</label>
+              <input name="motifs" value="lotus,wind,contour" />
+            </div>
+            <div>
+              <label>Meaning Keywords</label>
+              <input name="meaning_keywords" value="rebirth,strength,peace" />
+            </div>
+            <div>
+              <label>Avoid List</label>
+              <input name="avoid_list" value="weapons,dark skull" />
+            </div>
+            <div>
+              <label>Mood</label>
+              <input name="mood" value="calm" />
+            </div>
+            <button class="btn" type="submit">Save Preference</button>
+          </form>
+          <p class="meta" id="preference-meta">No preference yet.</p>
+        </article>
 
-          <article class="card wide">
-            <h3>Concept Gallery</h3>
-            <form id="generate-form" class="inline-form">
-              <div>
-                <label>Upload ID</label>
-                <input name="upload_id" placeholder="auto-filled after upload" />
-              </div>
-              <div>
-                <label>Preference ID</label>
-                <input name="preference_id" placeholder="auto-filled after preference" />
-              </div>
-              <div>
-                <label>Variant Count</label>
-                <input type="number" min="1" max="5" name="variant_count" value="3" />
-              </div>
-              <button class="btn" type="submit">Generate Concepts</button>
-            </form>
-            <p class="meta" id="generation-meta">No generation yet.</p>
-            <div id="concept-grid" class="concept-grid"></div>
-          </article>
+        <article class="step-panel" id="step-generation">
+          <h3>Concept Gallery</h3>
+          <form id="generate-form" class="inline-form">
+            <div>
+              <label>Upload ID</label>
+              <input name="upload_id" placeholder="auto-filled after upload" />
+            </div>
+            <div>
+              <label>Preference ID</label>
+              <input name="preference_id" placeholder="auto-filled after preference" />
+            </div>
+            <div>
+              <label>Variant Count</label>
+              <input type="number" min="1" max="5" name="variant_count" value="3" />
+            </div>
+            <button class="btn" type="submit">Generate Concepts</button>
+          </form>
+          <p class="meta" id="generation-meta">No generation yet.</p>
+          <div id="concept-grid" class="concept-grid"></div>
+        </article>
 
-          <article class="card wide">
-            <h3>Artist Collaboration</h3>
-            <form id="invite-form" class="inline-form">
-              <div>
-                <label>Artist Actor ID</label>
-                <input name="artist_actor_id" placeholder="from Artist session" required />
-              </div>
-              <div>
-                <label>Concept IDs (comma separated)</label>
-                <input name="concept_ids" placeholder="auto-filled from latest generation" />
-              </div>
-              <button class="btn" type="submit">Invite Artist</button>
-            </form>
-            <p class="meta" id="invite-meta">No collaboration yet.</p>
-            <button id="revoke-btn" class="btn ghost" type="button">Revoke Collaboration</button>
-          </article>
-        </div>
+        <article class="step-panel" id="step-collaboration">
+          <h3>Artist Collaboration</h3>
+          <form id="invite-form" class="inline-form">
+            <div>
+              <label>Artist Actor ID</label>
+              <input name="artist_actor_id" placeholder="from Artist session" required />
+            </div>
+            <div>
+              <label>Concept IDs (comma separated)</label>
+              <input name="concept_ids" placeholder="auto-filled from latest generation" />
+            </div>
+            <button class="btn" type="submit">Invite Artist</button>
+          </form>
+          <p class="meta" id="invite-meta">No collaboration yet.</p>
+          <button id="revoke-btn" class="btn ghost" type="button">Revoke Collaboration</button>
+        </article>
       </section>
     </main>
+
+    <aside class="concept-lightbox" id="concept-lightbox" aria-hidden="true">
+      <div class="lightbox-backdrop" data-lightbox-close="true"></div>
+      <section class="lightbox-frame" role="dialog" aria-modal="true" aria-label="Concept preview">
+        <header class="lightbox-head">
+          <h3 id="lightbox-title">Concept Preview</h3>
+          <button class="btn ghost small" id="lightbox-close-btn" type="button">Close</button>
+        </header>
+        <img id="lightbox-image" class="lightbox-image" alt="Concept preview" />
+        <p class="meta" id="lightbox-meta"></p>
+      </section>
+    </aside>
 
     <aside class="toast" id="toast"></aside>
     <script src="./app.js"></script>

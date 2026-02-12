@@ -20,20 +20,41 @@
       </nav>
     </header>
 
-    <main class="shell single">
+    <main class="shell workspace">
+      <aside class="workspace-nav">
+        <h2>Artist Flow</h2>
+        <p class="hint">Review only invited concepts and add structured refinement feedback.</p>
+        <section class="progress-card">
+          <h3>Intent</h3>
+          <ul class="progress-list">
+            <li><span class="dot"></span>Need-to-know access</li>
+            <li><span class="dot"></span>Collaborative clarity</li>
+            <li><span class="dot"></span>Dignity-aware language</li>
+          </ul>
+        </section>
+      </aside>
+
       <section class="workspace-main panel active" id="artist-panel">
         <header class="panel-head">
           <h2>Artist Collaboration Workspace</h2>
-          <p>Structured and clean view for reviewing shared concepts and documenting refinement notes.</p>
+          <p>Structured and calm review flow for invited concepts and refinement notes.</p>
         </header>
 
-        <div class="grid two">
+        <nav class="stepper" id="artist-stepper" aria-label="Artist workflow steps">
+          <button class="step-btn active" data-artist-step-target="session" type="button">1. Session</button>
+          <button class="step-btn" data-artist-step-target="collaboration" type="button">2. Collaboration</button>
+          <button class="step-btn" data-artist-step-target="notes" type="button">3. Notes</button>
+        </nav>
+
+        <article class="step-panel active" id="artist-step-session">
           <article class="card">
             <h3>Session</h3>
             <button id="artist-session-btn" class="btn" type="button">Create Artist Session</button>
             <p class="meta" id="artist-session-meta">No artist session yet.</p>
           </article>
+        </article>
 
+        <article class="step-panel" id="artist-step-collaboration">
           <article class="card">
             <h3>Load Collaboration</h3>
             <form id="artist-collab-form">
@@ -43,8 +64,10 @@
             </form>
             <p class="meta" id="artist-collab-meta">No collaboration loaded.</p>
           </article>
+        </article>
 
-          <article class="card wide">
+        <article class="step-panel" id="artist-step-notes">
+          <article class="card">
             <h3>Notes</h3>
             <form id="artist-note-form" class="inline-form">
               <div>
@@ -64,7 +87,7 @@
             <button id="artist-list-notes-btn" class="btn ghost" type="button">Refresh Notes</button>
             <div id="artist-notes-list" class="notes-list"></div>
           </article>
-        </div>
+        </article>
       </section>
     </main>
 

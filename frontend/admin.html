@@ -20,20 +20,41 @@
       </nav>
     </header>
 
-    <main class="shell single">
+    <main class="shell workspace">
+      <aside class="workspace-nav">
+        <h2>Operations Flow</h2>
+        <p class="hint">Safety-first controls for reliability, incidents, and controlled generation rollout.</p>
+        <section class="progress-card">
+          <h3>Operating posture</h3>
+          <ul class="progress-list">
+            <li><span class="dot"></span>Audited actions</li>
+            <li><span class="dot"></span>Controlled blast radius</li>
+            <li><span class="dot"></span>Fast rollback path</li>
+          </ul>
+        </section>
+      </aside>
+
       <section class="workspace-main panel active" id="admin-panel">
         <header class="panel-head">
           <h2>Operations and Reliability</h2>
           <p>Runtime controls for incident response and safe generation governance.</p>
         </header>
 
-        <div class="grid two">
+        <nav class="stepper" id="admin-stepper" aria-label="Operations workflow steps">
+          <button class="step-btn active" data-admin-step-target="session" type="button">1. Session</button>
+          <button class="step-btn" data-admin-step-target="controls" type="button">2. Controls</button>
+          <button class="step-btn" data-admin-step-target="metrics" type="button">3. Metrics</button>
+        </nav>
+
+        <article class="step-panel active" id="admin-step-session">
           <article class="card">
             <h3>Session</h3>
             <button id="admin-session-btn" class="btn" type="button">Create Admin Session</button>
             <p class="meta" id="admin-session-meta">No admin session yet.</p>
           </article>
+        </article>
 
+        <article class="step-panel" id="admin-step-controls">
           <article class="card">
             <h3>Generation Switch</h3>
             <form id="admin-toggle-form" class="inline">
@@ -43,10 +64,16 @@
               </label>
               <button class="btn" type="submit">Apply</button>
             </form>
+          </article>
+        </article>
+
+        <article class="step-panel" id="admin-step-metrics">
+          <article class="card">
+            <h3>Reliability Metrics</h3>
             <button id="admin-metrics-btn" class="btn ghost" type="button">Refresh Metrics</button>
             <pre id="admin-metrics" class="metrics">{}</pre>
           </article>
-        </div>
+        </article>
       </section>
     </main>
 

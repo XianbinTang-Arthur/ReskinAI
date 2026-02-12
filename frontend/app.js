@@ -10,6 +10,7 @@
     collaborationId: "",
     collaborationStatus: "",
     pendingUploadFile: null,
+    conceptsById: {},
   },
   artist: {
     token: "",
@@ -24,6 +25,16 @@
 
 const toastEl = document.getElementById("toast");
 const conceptGridEl = document.getElementById("concept-grid");
+const clientStepButtons = [...document.querySelectorAll("#client-stepper .step-btn")];
+const clientStepPanels = [...document.querySelectorAll("#user-panel .step-panel")];
+const artistStepButtons = [...document.querySelectorAll("#artist-stepper .step-btn")];
+const artistStepPanels = [...document.querySelectorAll("#artist-panel .step-panel")];
+const adminStepButtons = [...document.querySelectorAll("#admin-stepper .step-btn")];
+const adminStepPanels = [...document.querySelectorAll("#admin-panel .step-panel")];
+const lightboxEl = document.getElementById("concept-lightbox");
+const lightboxImageEl = document.getElementById("lightbox-image");
+const lightboxMetaEl = document.getElementById("lightbox-meta");
+const lightboxTitleEl = document.getElementById("lightbox-title");
 const artistNotesEl = document.getElementById("artist-notes-list");
 const journeyLogEl = document.getElementById("journey-log");
 const progressEls = {
@@ -34,6 +45,12 @@ const progressEls = {
   generation: document.getElementById("progress-generation"),
   collaboration: document.getElementById("progress-collaboration"),
 };
+const clientStepOrder = ["intake", "upload", "preference", "generation", "collaboration"];
+const artistStepOrder = ["session", "collaboration", "notes"];
+const adminStepOrder = ["session", "controls", "metrics"];
+let activeClientStep = "intake";
+let activeArtistStep = "session";
+let activeAdminStep = "session";
 
 function showToast(message, type = "info") {
   toastEl.textContent = message;
@@ -85,6 +102,90 @@ function refreshFlowProgress() {
   markProgressStep(progressEls.preference, Boolean(state.user.preferenceId));
   markProgressStep(progressEls.generation, state.user.conceptIds.length > 0);
   markProgressStep(progressEls.collaboration, state.user.collaborationStatus === "active");
+  refreshClientStepper();
+}
+
+function refreshClientStepper() {
+  if (!clientStepButtons.length) {
+    return;
+  }
+  const completion = {
+    intake: Boolean(state.user.token && state.user.consentId),
+    upload: Boolean(state.user.uploadId),
+    preference: Boolean(state.user.preferenceId),
+    generation: state.user.conceptIds.length > 0,
+    collaboration: state.user.collaborationStatus === "active",
+  };
+  for (const button of clientStepButtons) {
+    const step = button.dataset.stepTarget;
+    button.classList.toggle("active", step === activeClientStep);
+    button.classList.toggle("done", Boolean(step && completion[step]));
+  }
+}
+
+function setActiveClientStep(stepName) {
+  if (!stepName || !clientStepOrder.includes(stepName)) {
+    return;
+  }
+  activeClientStep = stepName;
+  for (const panel of clientStepPanels) {
+    panel.classList.toggle("active", panel.id === `step-${stepName}`);
+  }
+  refreshClientStepper();
+}
+
+function refreshArtistStepper() {
+  if (!artistStepButtons.length) {
+    return;
+  }
+  const completion = {
+    session: Boolean(state.artist.token),
+    collaboration: Boolean(state.artist.collaborationId),
+    notes: false,
+  };
+  for (const button of artistStepButtons) {
+    const step = button.dataset.artistStepTarget;
+    button.classList.toggle("active", step === activeArtistStep);
+    button.classList.toggle("done", Boolean(step && completion[step]));
+  }
+}
+
+function setActiveArtistStep(stepName) {
+  if (!stepName || !artistStepOrder.includes(stepName)) {
+    return;
+  }
+  activeArtistStep = stepName;
+  for (const panel of artistStepPanels) {
+    panel.classList.toggle("active", panel.id === `artist-step-${stepName}`);
+  }
+  refreshArtistStepper();
+}
+
+function refreshAdminStepper() {
+  if (!adminStepButtons.length) {
+    return;
+  }
+  const completion = {
+    session: Boolean(state.admin.token),
+    controls: Boolean(state.admin.token),
+    metrics: false,
+  };
+  for (const button of adminStepButtons) {
+    const step = button.dataset.adminStepTarget;
+    button.classList.toggle("active", step === activeAdminStep);
+    button.classList.toggle("done", Boolean(step && completion[step]));
+  }
+}
+
+function setActiveAdminStep(stepName) {
+  if (!stepName || !adminStepOrder.includes(stepName)) {
+    return;
+  }
+  activeAdminStep = stepName;
+  for (const panel of adminStepPanels) {
+    panel.classList.toggle("active", panel.id === `admin-step-${stepName}`);
+  }
+  refreshAdminStepper();
 }
 
 function parseCsv(rawValue) {
@@ -137,6 +238,26 @@ function setActivePanel(panelId) {
   }
 }
 
+function openConceptLightbox(concept) {
+  if (!lightboxEl || !lightboxImageEl || !lightboxMetaEl || !lightboxTitleEl || !concept) {
+    return;
+  }
+  lightboxImageEl.src = concept.storage_uri;
+  lightboxImageEl.alt = `Concept ${concept.id}`;
+  lightboxMetaEl.textContent = `Concept ID: ${concept.id} · ${concept.selected ? "Selected" : "Not selected"}`;
+  lightboxTitleEl.textContent = `Concept ${concept.id}`;
+  lightboxEl.classList.add("open");
+  lightboxEl.setAttribute("aria-hidden", "false");
+}
+
+function closeConceptLightbox() {
+  if (!lightboxEl) {
+    return;
+  }
+  lightboxEl.classList.remove("open");
+  lightboxEl.setAttribute("aria-hidden", "true");
+}
+
 async function request(path, { method = "GET", token = "", json = undefined, formData = undefined } = {}) {
   const options = { method, headers: {} };
   if (token) {
@@ -172,8 +293,17 @@ function renderConcepts(concepts) {
   if (!conceptGridEl) {
     return;
   }
+  state.user.conceptsById = {};
   conceptGridEl.innerHTML = "";
+  if (!concepts.length) {
+    const empty = document.createElement("article");
+    empty.className = "concept-empty";
+    empty.textContent = "No concepts yet. Generate to open your private gallery.";
+    conceptGridEl.appendChild(empty);
+    return;
+  }
   for (const concept of concepts) {
+    state.user.conceptsById[concept.id] = concept;
     const card = document.createElement("article");
     card.className = "concept-card";
 
@@ -194,6 +324,13 @@ function renderConcepts(concepts) {
 
     const actions = document.createElement("div");
     actions.className = "concept-actions";
+
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "btn small ghost";
+    viewBtn.dataset.action = "view";
+    viewBtn.dataset.conceptId = concept.id;
+    viewBtn.textContent = "View";
 
     const selectBtn = document.createElement("button");
     selectBtn.type = "button";
@@ -216,7 +353,7 @@ function renderConcepts(concepts) {
     dislikeBtn.dataset.conceptId = concept.id;
     dislikeBtn.textContent = "Dislike";
 
-    actions.append(selectBtn, likeBtn, dislikeBtn);
+    actions.append(viewBtn, selectBtn, likeBtn, dislikeBtn);
     card.appendChild(actions);
     conceptGridEl.appendChild(card);
   }
@@ -258,6 +395,72 @@ function setupTabs() {
   for (const tab of tabs) {
     tab.addEventListener("click", () => setActivePanel(tab.dataset.panel));
   }
+}
+
+function setupClientStepper() {
+  if (!clientStepButtons.length || !clientStepPanels.length) {
+    return;
+  }
+  for (const button of clientStepButtons) {
+    button.addEventListener("click", () => {
+      const targetStep = button.dataset.stepTarget;
+      if (targetStep) {
+        setActiveClientStep(targetStep);
+      }
+    });
+  }
+  setActiveClientStep(activeClientStep);
+}
+
+function setupArtistStepper() {
+  if (!artistStepButtons.length || !artistStepPanels.length) {
+    return;
+  }
+  for (const button of artistStepButtons) {
+    button.addEventListener("click", () => {
+      const targetStep = button.dataset.artistStepTarget;
+      if (targetStep) {
+        setActiveArtistStep(targetStep);
+      }
+    });
+  }
+  setActiveArtistStep(activeArtistStep);
+}
+
+function setupAdminStepper() {
+  if (!adminStepButtons.length || !adminStepPanels.length) {
+    return;
+  }
+  for (const button of adminStepButtons) {
+    button.addEventListener("click", () => {
+      const targetStep = button.dataset.adminStepTarget;
+      if (targetStep) {
+        setActiveAdminStep(targetStep);
+      }
+    });
+  }
+  setActiveAdminStep(activeAdminStep);
+}
+
+function setupConceptLightbox() {
+  if (!lightboxEl) {
+    return;
+  }
+  const closeButton = document.getElementById("lightbox-close-btn");
+  if (closeButton) {
+    closeButton.addEventListener("click", closeConceptLightbox);
+  }
+  lightboxEl.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.getAttribute("data-lightbox-close") === "true") {
+      closeConceptLightbox();
+    }
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeConceptLightbox();
+    }
+  });
 }
 
 function setupUploadDropzone() {
@@ -426,6 +629,7 @@ function setupUserFlow() {
       setInputValue("upload-form", "consent_id", consent.id);
       setMeta("consent-meta", `consent_id=${consent.id}`);
       refreshFlowProgress();
+      setActiveClientStep("upload");
       showToast("Consent created.");
     } catch (error) {
       showToast(error.message, "error");
@@ -455,6 +659,7 @@ function setupUserFlow() {
       setInputValue("generate-form", "upload_id", upload.id);
       setMeta("upload-meta", `upload_id=${upload.id}\nuri=${upload.storage_uri}`);
       refreshFlowProgress();
+      setActiveClientStep("preference");
       showToast("Scar image uploaded.");
     } catch (error) {
       showToast(error.message, "error");
@@ -478,6 +683,7 @@ function setupUserFlow() {
       setInputValue("generate-form", "preference_id", pref.id);
       setMeta("preference-meta", `preference_id=${pref.id} (version ${pref.version})`);
       refreshFlowProgress();
+      setActiveClientStep("generation");
       showToast("Preference saved.");
     } catch (error) {
       showToast(error.message, "error");
@@ -507,6 +713,7 @@ function setupUserFlow() {
       );
       renderConcepts(generation.concepts);
       refreshFlowProgress();
+      setActiveClientStep("generation");
       showToast("Concept generation completed.");
     } catch (error) {
       showToast(error.message, "error");
@@ -522,7 +729,12 @@ function setupUserFlow() {
       const token = requireToken("user");
       const conceptId = button.dataset.conceptId;
       const action = button.dataset.action;
-      if (action === "select") {
+      if (!conceptId) {
+        return;
+      }
+      if (action === "view") {
+        openConceptLightbox(state.user.conceptsById[conceptId]);
+      } else if (action === "select") {
         await request(`/api/v1/concepts/${conceptId}/select`, { method: "POST", token });
         showToast(`Selected concept ${conceptId}.`);
       } else {
@@ -565,6 +777,7 @@ function setupUserFlow() {
       setInputValue("artist-note-form", "collaboration_id", collaboration.id);
       setMeta("invite-meta", `collaboration_id=${collaboration.id}\nstatus=${collaboration.status}`);
       refreshFlowProgress();
+      setActiveClientStep("collaboration");
       showToast("Artist invited.");
     } catch (error) {
       showToast(error.message, "error");
@@ -608,6 +821,7 @@ function setupArtistFlow() {
       state.artist.actorId = session.actor_id;
       setInputValue("invite-form", "artist_actor_id", session.actor_id);
       setMeta("artist-session-meta", `actor_id=${session.actor_id}`);
+      setActiveArtistStep("collaboration");
       showToast("Artist session created.");
     } catch (error) {
       showToast(error.message, "error");
@@ -630,6 +844,7 @@ function setupArtistFlow() {
         "artist-collab-meta",
         `status=${collaboration.status}\nconcept_ids=${collaboration.concept_ids.join(", ") || "-"}`,
       );
+      setActiveArtistStep("notes");
       showToast("Collaboration loaded.");
     } catch (error) {
       showToast(error.message, "error");
@@ -696,6 +911,7 @@ function setupAdminFlow() {
       state.admin.token = session.token;
       state.admin.actorId = session.actor_id;
       setMeta("admin-session-meta", `actor_id=${session.actor_id}`);
+      setActiveAdminStep("controls");
       showToast("Admin session created.");
     } catch (error) {
       showToast(error.message, "error");
@@ -714,6 +930,7 @@ function setupAdminFlow() {
         json: { disabled, reason: "toggled from console" },
       });
       document.getElementById("admin-metrics").textContent = JSON.stringify(metrics, null, 2);
+      setActiveAdminStep("metrics");
       showToast(`Generation ${disabled ? "disabled" : "enabled"}.`);
     } catch (error) {
       showToast(error.message, "error");
@@ -725,6 +942,7 @@ function setupAdminFlow() {
       const token = requireToken("admin");
       const metrics = await request("/api/v1/admin/metrics", { token });
       document.getElementById("admin-metrics").textContent = JSON.stringify(metrics, null, 2);
+      setActiveAdminStep("metrics");
       showToast("Metrics refreshed.");
     } catch (error) {
       showToast(error.message, "error");
@@ -884,6 +1102,10 @@ async function runOnboardingSandbox() {
 
 function init() {
   setupTabs();
+  setupClientStepper();
+  setupArtistStepper();
+  setupAdminStepper();
+  setupConceptLightbox();
   setupUploadDropzone();
   setupPreferenceAssist();
   setupUserFlow();
