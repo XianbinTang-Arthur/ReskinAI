@@ -27,6 +27,14 @@ sed \
 sudo cp "$tmp_conf" "$TARGET_CONF"
 rm -f "$tmp_conf"
 
+port80_lines=$(sudo ss -ltnp | awk '$4 ~ /:80$/ {print}')
+if [[ -n "${port80_lines}" ]] && ! echo "$port80_lines" | grep -q "nginx"; then
+  echo "[nginx] Port 80 is already in use by another process:"
+  echo "$port80_lines"
+  echo "[nginx] Resolve the conflict first, then rerun this script."
+  exit 1
+fi
+
 echo "[nginx] Validating config..."
 sudo nginx -t
 

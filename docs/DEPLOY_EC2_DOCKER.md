@@ -68,6 +68,8 @@ Optional custom host name:
 SERVER_NAME=app.example.com bash deploy/ec2/setup_nginx_proxy.sh
 ```
 
+If port `80` is already occupied by another service, stop/move that service first.
+
 ## 7) Enable HTTPS with Let's Encrypt (when domain is ready)
 
 ```bash
