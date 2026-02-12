@@ -1,0 +1,14 @@
+fastapi<1.0.0,>=0.116.0
+uvicorn[standard]<1.0.0,>=0.30.0
+pydantic<3.0.0,>=2.8.0
+python-multipart<1.0.0,>=0.0.9
+sqlalchemy<3.0.0,>=2.0.32
+
+[dev]
+pytest<9.0.0,>=8.3.0
+httpx<1.0.0,>=0.27.0
+ruff<1.0.0,>=0.6.0
+alembic<2.0.0,>=1.13.2
+
+[postgres]
+psycopg[binary]<4.0.0,>=3.2.0

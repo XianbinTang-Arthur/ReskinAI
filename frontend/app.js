@@ -1,0 +1,903 @@
+﻿const state = {
+  user: {
+    token: "",
+    actorId: "",
+    consentId: "",
+    uploadId: "",
+    preferenceId: "",
+    generationId: "",
+    conceptIds: [],
+    collaborationId: "",
+    collaborationStatus: "",
+    pendingUploadFile: null,
+  },
+  artist: {
+    token: "",
+    actorId: "",
+    collaborationId: "",
+  },
+  admin: {
+    token: "",
+    actorId: "",
+  },
+};
+
+const toastEl = document.getElementById("toast");
+const conceptGridEl = document.getElementById("concept-grid");
+const artistNotesEl = document.getElementById("artist-notes-list");
+const journeyLogEl = document.getElementById("journey-log");
+const progressEls = {
+  userSession: document.getElementById("progress-user-session"),
+  consent: document.getElementById("progress-consent"),
+  upload: document.getElementById("progress-upload"),
+  preference: document.getElementById("progress-preference"),
+  generation: document.getElementById("progress-generation"),
+  collaboration: document.getElementById("progress-collaboration"),
+};
+
+function showToast(message, type = "info") {
+  toastEl.textContent = message;
+  toastEl.classList.add("show");
+  toastEl.classList.toggle("error", type === "error");
+  window.clearTimeout(showToast.timerId);
+  showToast.timerId = window.setTimeout(() => {
+    toastEl.classList.remove("show");
+  }, 2200);
+}
+
+function appendJourney(message) {
+  if (!journeyLogEl) {
+    return;
+  }
+  const timestamp = new Date().toLocaleTimeString();
+  const existing = journeyLogEl.textContent.trim();
+  const lines = existing ? existing.split("\n") : [];
+  lines.push(`[${timestamp}] ${message}`);
+  journeyLogEl.textContent = lines.slice(-22).join("\n");
+  journeyLogEl.scrollTop = journeyLogEl.scrollHeight;
+}
+
+function setMeta(id, message) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = message;
+  }
+}
+
+function setUploadFileLabel(text) {
+  const label = document.getElementById("upload-file-label");
+  if (label) {
+    label.textContent = text;
+  }
+}
+
+function markProgressStep(element, done) {
+  if (!element) {
+    return;
+  }
+  element.classList.toggle("done", Boolean(done));
+}
+
+function refreshFlowProgress() {
+  markProgressStep(progressEls.userSession, Boolean(state.user.token));
+  markProgressStep(progressEls.consent, Boolean(state.user.consentId));
+  markProgressStep(progressEls.upload, Boolean(state.user.uploadId));
+  markProgressStep(progressEls.preference, Boolean(state.user.preferenceId));
+  markProgressStep(progressEls.generation, state.user.conceptIds.length > 0);
+  markProgressStep(progressEls.collaboration, state.user.collaborationStatus === "active");
+}
+
+function parseCsv(rawValue) {
+  if (!rawValue) {
+    return [];
+  }
+  return rawValue
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function requireToken(role) {
+  const token = state[role].token;
+  if (!token) {
+    throw new Error(`Create ${role} session first.`);
+  }
+  return token;
+}
+
+function setInputValue(formId, name, value) {
+  const form = document.getElementById(formId);
+  if (!form) {
+    return;
+  }
+  const input = form.elements.namedItem(name);
+  if (input && typeof input.value !== "undefined") {
+    input.value = value;
+  }
+}
+
+function setPill(id, label, stateName = "neutral") {
+  const el = document.getElementById(id);
+  if (!el) {
+    return;
+  }
+  el.textContent = label;
+  el.classList.remove("neutral", "good", "warn");
+  el.classList.add(stateName);
+}
+
+function setActivePanel(panelId) {
+  const tabs = [...document.querySelectorAll(".tab")];
+  const panels = [...document.querySelectorAll(".panel")];
+  for (const panel of panels) {
+    panel.classList.toggle("active", panel.id === panelId);
+  }
+  for (const tab of tabs) {
+    tab.classList.toggle("active", tab.dataset.panel === panelId);
+  }
+}
+
+async function request(path, { method = "GET", token = "", json = undefined, formData = undefined } = {}) {
+  const options = { method, headers: {} };
+  if (token) {
+    options.headers.Authorization = `Bearer ${token}`;
+  }
+  if (json !== undefined) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(json);
+  }
+  if (formData) {
+    options.body = formData;
+  }
+  const response = await fetch(path, options);
+  const raw = await response.text();
+  let payload = null;
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = raw;
+    }
+  }
+  if (!response.ok) {
+    const code = payload && typeof payload === "object" ? payload.code || "API_ERROR" : "API_ERROR";
+    const message =
+      payload && typeof payload === "object" ? payload.message || response.statusText : response.statusText;
+    throw new Error(`${response.status} ${code}: ${message}`);
+  }
+  return payload;
+}
+
+function renderConcepts(concepts) {
+  if (!conceptGridEl) {
+    return;
+  }
+  conceptGridEl.innerHTML = "";
+  for (const concept of concepts) {
+    const card = document.createElement("article");
+    card.className = "concept-card";
+
+    const preview = document.createElement("img");
+    preview.className = "concept-preview";
+    preview.src = concept.storage_uri;
+    preview.alt = `Concept ${concept.id}`;
+    card.appendChild(preview);
+
+    const row = document.createElement("div");
+    row.className = "concept-row";
+    const idSpan = document.createElement("span");
+    idSpan.textContent = concept.id;
+    const selectedSpan = document.createElement("span");
+    selectedSpan.textContent = concept.selected ? "selected" : "not selected";
+    row.append(idSpan, selectedSpan);
+    card.appendChild(row);
+
+    const actions = document.createElement("div");
+    actions.className = "concept-actions";
+
+    const selectBtn = document.createElement("button");
+    selectBtn.type = "button";
+    selectBtn.className = "btn small";
+    selectBtn.dataset.action = "select";
+    selectBtn.dataset.conceptId = concept.id;
+    selectBtn.textContent = "Select";
+
+    const likeBtn = document.createElement("button");
+    likeBtn.type = "button";
+    likeBtn.className = "btn small ghost";
+    likeBtn.dataset.action = "like";
+    likeBtn.dataset.conceptId = concept.id;
+    likeBtn.textContent = "Like";
+
+    const dislikeBtn = document.createElement("button");
+    dislikeBtn.type = "button";
+    dislikeBtn.className = "btn small ghost";
+    dislikeBtn.dataset.action = "dislike";
+    dislikeBtn.dataset.conceptId = concept.id;
+    dislikeBtn.textContent = "Dislike";
+
+    actions.append(selectBtn, likeBtn, dislikeBtn);
+    card.appendChild(actions);
+    conceptGridEl.appendChild(card);
+  }
+}
+
+function renderNotes(notes) {
+  if (!artistNotesEl) {
+    return;
+  }
+  artistNotesEl.innerHTML = "";
+  if (!notes.length) {
+    artistNotesEl.textContent = "No notes yet.";
+    return;
+  }
+  for (const note of notes) {
+    const node = document.createElement("article");
+    node.className = "note-item";
+    const conceptId = note.concept_id || "general";
+    node.textContent = `[${conceptId}] ${note.note_text}`;
+    artistNotesEl.appendChild(node);
+  }
+}
+
+async function refreshHealthStatus() {
+  try {
+    const data = await request("/healthz");
+    setPill("status-health", data.status === "ok" ? "healthy" : "unknown", data.status === "ok" ? "good" : "warn");
+    setPill("status-env", String(data.env || "-"), "neutral");
+    setPill("status-provider", String(data.model_provider || "-"), "neutral");
+    setPill("status-fallback", data.fallback_enabled ? "enabled" : "disabled", data.fallback_enabled ? "good" : "warn");
+  } catch (error) {
+    setPill("status-health", "offline", "warn");
+    appendJourney(`Health check failed: ${error.message}`);
+  }
+}
+
+function setupTabs() {
+  const tabs = [...document.querySelectorAll(".tab")];
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => setActivePanel(tab.dataset.panel));
+  }
+}
+
+function setupUploadDropzone() {
+  const zone = document.getElementById("upload-dropzone");
+  const form = document.getElementById("upload-form");
+  if (!zone || !form) {
+    return;
+  }
+  const input = form.elements.namedItem("file");
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const assignFile = (file) => {
+    if (!(file instanceof File)) {
+      return;
+    }
+    state.user.pendingUploadFile = file;
+    setUploadFileLabel(`${file.name} (${Math.round(file.size / 1024)} KB)`);
+    try {
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+    } catch {
+      // Some browsers block programmatic file assignment. Pending file is still kept in state.
+    }
+  };
+
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (file) {
+      assignFile(file);
+    }
+  });
+
+  zone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    zone.classList.add("dragover");
+  });
+
+  zone.addEventListener("dragleave", () => {
+    zone.classList.remove("dragover");
+  });
+
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    zone.classList.remove("dragover");
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) {
+      assignFile(file);
+    }
+  });
+}
+
+function setupPreferenceAssist() {
+  const form = document.getElementById("preference-form");
+  if (!form) {
+    return;
+  }
+  const chips = [...document.querySelectorAll(".choice-chip")];
+  for (const chip of chips) {
+    chip.addEventListener("click", () => {
+      const target = chip.dataset.prefTarget;
+      const addTarget = chip.dataset.prefAdd;
+      const value = chip.dataset.prefValue || "";
+      if (!value) {
+        return;
+      }
+      if (target) {
+        setInputValue("preference-form", target, value);
+      } else if (addTarget) {
+        const input = form.elements.namedItem(addTarget);
+        if (input && typeof input.value === "string") {
+          const values = parseCsv(input.value);
+          if (!values.includes(value)) {
+            values.push(value);
+          }
+          input.value = values.join(",");
+        }
+      }
+    });
+  }
+}
+
+async function createSession(role) {
+  return request("/api/v1/auth/session", { method: "POST", json: { role } });
+}
+
+async function buildSyntheticScarFile() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 768;
+  canvas.height = 768;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("Canvas rendering context unavailable.");
+  }
+
+  const gradient = ctx.createLinearGradient(0, 0, 768, 768);
+  gradient.addColorStop(0, "#f6e6d0");
+  gradient.addColorStop(1, "#f2cfad");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 768, 768);
+
+  ctx.strokeStyle = "rgba(179, 72, 57, 0.42)";
+  ctx.lineWidth = 16;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(170, 220);
+  ctx.bezierCurveTo(330, 170, 430, 430, 590, 360);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(250, 240, 230, 0.65)";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(190, 230);
+  ctx.bezierCurveTo(320, 210, 430, 420, 560, 350);
+  ctx.stroke();
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Failed to produce sandbox image blob."));
+        return;
+      }
+      resolve(new File([blob], "sandbox-scar.png", { type: "image/png" }));
+    }, "image/png");
+  });
+}
+
+function setupUserFlow() {
+  const userSessionBtn = document.getElementById("user-session-btn");
+  const consentForm = document.getElementById("consent-form");
+  const uploadForm = document.getElementById("upload-form");
+  const preferenceForm = document.getElementById("preference-form");
+  const generateForm = document.getElementById("generate-form");
+  const inviteForm = document.getElementById("invite-form");
+  const revokeBtn = document.getElementById("revoke-btn");
+  if (!userSessionBtn || !consentForm || !uploadForm || !preferenceForm || !generateForm || !inviteForm || !revokeBtn) {
+    return;
+  }
+
+  userSessionBtn.addEventListener("click", async () => {
+    try {
+      const session = await createSession("user");
+      state.user.token = session.token;
+      state.user.actorId = session.actor_id;
+      setMeta("user-session-meta", `actor_id=${session.actor_id}`);
+      refreshFlowProgress();
+      showToast("User session created.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  consentForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("user");
+      const form = new FormData(event.currentTarget);
+      const payload = {
+        policy_version: String(form.get("policy_version") || "consent-v1"),
+        disclaimer_accepted: Boolean(form.get("disclaimer_accepted")),
+      };
+      const consent = await request("/api/v1/consents", { method: "POST", token, json: payload });
+      state.user.consentId = consent.id;
+      setInputValue("upload-form", "consent_id", consent.id);
+      setMeta("consent-meta", `consent_id=${consent.id}`);
+      refreshFlowProgress();
+      showToast("Consent created.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  uploadForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("user");
+      const form = new FormData(event.currentTarget);
+      const consentId = String(form.get("consent_id") || state.user.consentId);
+      const file = form.get("file") instanceof File && form.get("file").size > 0 ? form.get("file") : state.user.pendingUploadFile;
+      if (!consentId) {
+        throw new Error("Consent ID is required.");
+      }
+      if (!(file instanceof File) || file.size === 0) {
+        throw new Error("Select an image file first.");
+      }
+      const payload = new FormData();
+      payload.append("consent_id", consentId);
+      payload.append("file", file);
+      const upload = await request("/api/v1/uploads/file", { method: "POST", token, formData: payload });
+      state.user.uploadId = upload.id;
+      state.user.pendingUploadFile = null;
+      setUploadFileLabel("PNG, JPG, WEBP");
+      setInputValue("generate-form", "upload_id", upload.id);
+      setMeta("upload-meta", `upload_id=${upload.id}\nuri=${upload.storage_uri}`);
+      refreshFlowProgress();
+      showToast("Scar image uploaded.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  preferenceForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("user");
+      const form = new FormData(event.currentTarget);
+      const payload = {
+        style: String(form.get("style") || "").trim(),
+        motifs: parseCsv(String(form.get("motifs") || "")),
+        meaning_keywords: parseCsv(String(form.get("meaning_keywords") || "")),
+        avoid_list: parseCsv(String(form.get("avoid_list") || "")),
+        mood: String(form.get("mood") || "").trim() || null,
+      };
+      const pref = await request("/api/v1/preferences", { method: "POST", token, json: payload });
+      state.user.preferenceId = pref.id;
+      setInputValue("generate-form", "preference_id", pref.id);
+      setMeta("preference-meta", `preference_id=${pref.id} (version ${pref.version})`);
+      refreshFlowProgress();
+      showToast("Preference saved.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  generateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("user");
+      const form = new FormData(event.currentTarget);
+      const payload = {
+        upload_id: String(form.get("upload_id") || state.user.uploadId),
+        preference_id: String(form.get("preference_id") || state.user.preferenceId),
+        variant_count: Number(form.get("variant_count") || 3),
+      };
+      if (!payload.upload_id || !payload.preference_id) {
+        throw new Error("Upload ID and Preference ID are required.");
+      }
+      const generation = await request("/api/v1/generations", { method: "POST", token, json: payload });
+      state.user.generationId = generation.id;
+      state.user.conceptIds = generation.concepts.map((item) => item.id);
+      setInputValue("invite-form", "concept_ids", state.user.conceptIds.join(","));
+      setMeta(
+        "generation-meta",
+        `generation_id=${generation.id}\nmodel=${generation.model_version}\nconcepts=${generation.concepts.length}`,
+      );
+      renderConcepts(generation.concepts);
+      refreshFlowProgress();
+      showToast("Concept generation completed.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  conceptGridEl && conceptGridEl.addEventListener("click", async (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) {
+      return;
+    }
+    try {
+      const token = requireToken("user");
+      const conceptId = button.dataset.conceptId;
+      const action = button.dataset.action;
+      if (action === "select") {
+        await request(`/api/v1/concepts/${conceptId}/select`, { method: "POST", token });
+        showToast(`Selected concept ${conceptId}.`);
+      } else {
+        const sentiment = action === "like" ? "like" : "dislike";
+        await request(`/api/v1/concepts/${conceptId}/feedback`, {
+          method: "POST",
+          token,
+          json: { sentiment, reason_tags: ["ui-feedback"] },
+        });
+        showToast(`${sentiment} feedback saved for ${conceptId}.`);
+      }
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  inviteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("user");
+      const form = new FormData(event.currentTarget);
+      const artistActorId = String(form.get("artist_actor_id") || state.artist.actorId).trim();
+      const conceptsRaw = String(form.get("concept_ids") || "");
+      const conceptIds = parseCsv(conceptsRaw).length ? parseCsv(conceptsRaw) : state.user.conceptIds;
+      if (!artistActorId) {
+        throw new Error("Artist actor ID is required.");
+      }
+      if (!conceptIds.length) {
+        throw new Error("Provide at least one concept ID.");
+      }
+      const collaboration = await request("/api/v1/collaborations/invite", {
+        method: "POST",
+        token,
+        json: { artist_actor_id: artistActorId, concept_ids: conceptIds },
+      });
+      state.user.collaborationId = collaboration.id;
+      state.user.collaborationStatus = collaboration.status;
+      state.artist.collaborationId = collaboration.id;
+      setInputValue("artist-collab-form", "collaboration_id", collaboration.id);
+      setInputValue("artist-note-form", "collaboration_id", collaboration.id);
+      setMeta("invite-meta", `collaboration_id=${collaboration.id}\nstatus=${collaboration.status}`);
+      refreshFlowProgress();
+      showToast("Artist invited.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  revokeBtn.addEventListener("click", async () => {
+    try {
+      const token = requireToken("user");
+      const collaborationId = state.user.collaborationId;
+      if (!collaborationId) {
+        throw new Error("No collaboration to revoke.");
+      }
+      const updated = await request(`/api/v1/collaborations/${collaborationId}/revoke`, {
+        method: "POST",
+        token,
+      });
+      state.user.collaborationStatus = updated.status;
+      setMeta("invite-meta", `collaboration_id=${updated.id}\nstatus=${updated.status}`);
+      refreshFlowProgress();
+      showToast("Collaboration revoked.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+}
+
+function setupArtistFlow() {
+  const artistSessionBtn = document.getElementById("artist-session-btn");
+  const artistCollabForm = document.getElementById("artist-collab-form");
+  const artistNoteForm = document.getElementById("artist-note-form");
+  const artistListNotesBtn = document.getElementById("artist-list-notes-btn");
+  if (!artistSessionBtn || !artistCollabForm || !artistNoteForm || !artistListNotesBtn) {
+    return;
+  }
+
+  artistSessionBtn.addEventListener("click", async () => {
+    try {
+      const session = await createSession("artist");
+      state.artist.token = session.token;
+      state.artist.actorId = session.actor_id;
+      setInputValue("invite-form", "artist_actor_id", session.actor_id);
+      setMeta("artist-session-meta", `actor_id=${session.actor_id}`);
+      showToast("Artist session created.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  artistCollabForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("artist");
+      const form = new FormData(event.currentTarget);
+      const collaborationId = String(form.get("collaboration_id") || state.artist.collaborationId).trim();
+      if (!collaborationId) {
+        throw new Error("Collaboration ID is required.");
+      }
+      const collaboration = await request(`/api/v1/collaborations/${collaborationId}`, { token });
+      state.artist.collaborationId = collaboration.id;
+      setInputValue("artist-note-form", "collaboration_id", collaboration.id);
+      setMeta(
+        "artist-collab-meta",
+        `status=${collaboration.status}\nconcept_ids=${collaboration.concept_ids.join(", ") || "-"}`,
+      );
+      showToast("Collaboration loaded.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  artistNoteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("artist");
+      const form = new FormData(event.currentTarget);
+      const collaborationId = String(form.get("collaboration_id") || state.artist.collaborationId).trim();
+      if (!collaborationId) {
+        throw new Error("Collaboration ID is required.");
+      }
+      const conceptId = String(form.get("concept_id") || "").trim();
+      const noteText = String(form.get("note_text") || "").trim();
+      if (!noteText) {
+        throw new Error("Note cannot be empty.");
+      }
+      await request(`/api/v1/collaborations/${collaborationId}/notes`, {
+        method: "POST",
+        token,
+        json: {
+          concept_id: conceptId || null,
+          note_text: noteText,
+        },
+      });
+      showToast("Artist note added.");
+      const notes = await request(`/api/v1/collaborations/${collaborationId}/notes`, { token });
+      renderNotes(notes);
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  artistListNotesBtn.addEventListener("click", async () => {
+    try {
+      const token = requireToken("artist");
+      const collaborationId = state.artist.collaborationId;
+      if (!collaborationId) {
+        throw new Error("Load a collaboration first.");
+      }
+      const notes = await request(`/api/v1/collaborations/${collaborationId}/notes`, { token });
+      renderNotes(notes);
+      showToast("Notes refreshed.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+}
+
+function setupAdminFlow() {
+  const adminSessionBtn = document.getElementById("admin-session-btn");
+  const adminToggleForm = document.getElementById("admin-toggle-form");
+  const adminMetricsBtn = document.getElementById("admin-metrics-btn");
+  if (!adminSessionBtn || !adminToggleForm || !adminMetricsBtn) {
+    return;
+  }
+
+  adminSessionBtn.addEventListener("click", async () => {
+    try {
+      const session = await createSession("admin");
+      state.admin.token = session.token;
+      state.admin.actorId = session.actor_id;
+      setMeta("admin-session-meta", `actor_id=${session.actor_id}`);
+      showToast("Admin session created.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  adminToggleForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      const token = requireToken("admin");
+      const form = new FormData(event.currentTarget);
+      const disabled = Boolean(form.get("disabled"));
+      const metrics = await request("/api/v1/admin/generation/disable", {
+        method: "POST",
+        token,
+        json: { disabled, reason: "toggled from console" },
+      });
+      document.getElementById("admin-metrics").textContent = JSON.stringify(metrics, null, 2);
+      showToast(`Generation ${disabled ? "disabled" : "enabled"}.`);
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+
+  adminMetricsBtn.addEventListener("click", async () => {
+    try {
+      const token = requireToken("admin");
+      const metrics = await request("/api/v1/admin/metrics", { token });
+      document.getElementById("admin-metrics").textContent = JSON.stringify(metrics, null, 2);
+      showToast("Metrics refreshed.");
+    } catch (error) {
+      showToast(error.message, "error");
+    }
+  });
+}
+
+function setupHeroActions() {
+  const openStudioBtn = document.getElementById("open-studio-btn");
+  if (openStudioBtn) {
+    openStudioBtn.addEventListener("click", () => {
+      window.location.href = "/ui/client.html";
+    });
+  }
+
+  const runSandboxBtn = document.getElementById("run-sandbox-btn");
+  if (runSandboxBtn) {
+    runSandboxBtn.addEventListener("click", async () => {
+      const hasUserFlow = Boolean(document.getElementById("user-session-btn"));
+      if (!hasUserFlow) {
+        window.location.href = "/ui/client.html?sandbox=1";
+        return;
+      }
+      await runOnboardingSandbox();
+    });
+  }
+}
+
+async function runOnboardingSandbox() {
+  const button = document.getElementById("run-sandbox-btn");
+  button.disabled = true;
+  appendJourney("Starting onboarding sandbox flow.");
+  try {
+    setActivePanel("user-panel");
+
+    appendJourney("Creating user session.");
+    const userSession = await createSession("user");
+    state.user.token = userSession.token;
+    state.user.actorId = userSession.actor_id;
+    setMeta("user-session-meta", `actor_id=${userSession.actor_id}`);
+
+    appendJourney("Recording consent.");
+    const consent = await request("/api/v1/consents", {
+      method: "POST",
+      token: state.user.token,
+      json: { policy_version: "consent-v1", disclaimer_accepted: true },
+    });
+    state.user.consentId = consent.id;
+    setInputValue("upload-form", "consent_id", consent.id);
+    setMeta("consent-meta", `consent_id=${consent.id}`);
+
+    appendJourney("Creating privacy-safe synthetic test image.");
+    const demoFile = await buildSyntheticScarFile();
+    const uploadData = new FormData();
+    uploadData.append("consent_id", consent.id);
+    uploadData.append("file", demoFile);
+
+    appendJourney("Uploading synthetic image.");
+    const upload = await request("/api/v1/uploads/file", {
+      method: "POST",
+      token: state.user.token,
+      formData: uploadData,
+    });
+    state.user.uploadId = upload.id;
+    setInputValue("generate-form", "upload_id", upload.id);
+    setMeta("upload-meta", `upload_id=${upload.id}\nuri=${upload.storage_uri}`);
+
+    appendJourney("Saving preference profile.");
+    const preference = await request("/api/v1/preferences", {
+      method: "POST",
+      token: state.user.token,
+      json: {
+        style: "floral linework",
+        motifs: ["lotus", "contour", "wind"],
+        meaning_keywords: ["rebirth", "strength", "calm"],
+        avoid_list: ["weapons", "gore"],
+        mood: "gentle",
+      },
+    });
+    state.user.preferenceId = preference.id;
+    setInputValue("generate-form", "preference_id", preference.id);
+    setMeta("preference-meta", `preference_id=${preference.id} (version ${preference.version})`);
+
+    appendJourney("Generating scar-aware concepts.");
+    const generation = await request("/api/v1/generations", {
+      method: "POST",
+      token: state.user.token,
+      json: {
+        upload_id: upload.id,
+        preference_id: preference.id,
+        variant_count: 3,
+      },
+    });
+    state.user.generationId = generation.id;
+    state.user.conceptIds = generation.concepts.map((item) => item.id);
+    setInputValue("invite-form", "concept_ids", state.user.conceptIds.join(","));
+    setMeta(
+      "generation-meta",
+      `generation_id=${generation.id}\nmodel=${generation.model_version}\nconcepts=${generation.concepts.length}`,
+    );
+    renderConcepts(generation.concepts);
+    refreshFlowProgress();
+
+    appendJourney("Creating artist session and sharing concepts.");
+    const artistSession = await createSession("artist");
+    state.artist.token = artistSession.token;
+    state.artist.actorId = artistSession.actor_id;
+    setInputValue("invite-form", "artist_actor_id", artistSession.actor_id);
+    setMeta("artist-session-meta", `actor_id=${artistSession.actor_id}`);
+
+    const collaboration = await request("/api/v1/collaborations/invite", {
+      method: "POST",
+      token: state.user.token,
+      json: {
+        artist_actor_id: artistSession.actor_id,
+        concept_ids: state.user.conceptIds,
+      },
+    });
+    state.user.collaborationId = collaboration.id;
+    state.user.collaborationStatus = collaboration.status;
+    state.artist.collaborationId = collaboration.id;
+    setInputValue("artist-collab-form", "collaboration_id", collaboration.id);
+    setInputValue("artist-note-form", "collaboration_id", collaboration.id);
+    setMeta("invite-meta", `collaboration_id=${collaboration.id}\nstatus=${collaboration.status}`);
+    refreshFlowProgress();
+
+    await request(`/api/v1/collaborations/${collaboration.id}/notes`, {
+      method: "POST",
+      token: state.artist.token,
+      json: {
+        concept_id: state.user.conceptIds[0] || null,
+        note_text: "Favor lighter line density at scar edge, keep open space for skin breathing.",
+      },
+    });
+    const notes = await request(`/api/v1/collaborations/${collaboration.id}/notes`, { token: state.artist.token });
+    renderNotes(notes);
+    appendJourney("Artist feedback added.");
+
+    appendJourney("Creating admin session and loading reliability metrics.");
+    const adminSession = await createSession("admin");
+    state.admin.token = adminSession.token;
+    state.admin.actorId = adminSession.actor_id;
+    setMeta("admin-session-meta", `actor_id=${adminSession.actor_id}`);
+    const metrics = await request("/api/v1/admin/metrics", { token: state.admin.token });
+    document.getElementById("admin-metrics").textContent = JSON.stringify(metrics, null, 2);
+
+    appendJourney("Onboarding sandbox flow completed.");
+    showToast("Onboarding sandbox completed.");
+    await refreshHealthStatus();
+  } catch (error) {
+    appendJourney(`Onboarding sandbox failed: ${error.message}`);
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function init() {
+  setupTabs();
+  setupUploadDropzone();
+  setupPreferenceAssist();
+  setupUserFlow();
+  setupArtistFlow();
+  setupAdminFlow();
+  setupHeroActions();
+  refreshHealthStatus();
+  refreshFlowProgress();
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("sandbox") === "1" && document.getElementById("user-session-btn")) {
+    runOnboardingSandbox();
+  }
+}
+
+init();
+

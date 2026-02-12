@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReSkin AI | Artist Workspace</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-one"></div>
+    <div class="bg-shape bg-two"></div>
+
+    <header class="topbar shell">
+      <div class="brand">ReSkin AI</div>
+      <nav class="nav-links">
+        <a href="/ui/">Home</a>
+        <a href="/ui/client.html">Client</a>
+        <a class="active" href="/ui/artist.html">Artist</a>
+        <a href="/ui/admin.html">Operations</a>
+      </nav>
+    </header>
+
+    <main class="shell single">
+      <section class="workspace-main panel active" id="artist-panel">
+        <header class="panel-head">
+          <h2>Artist Collaboration Workspace</h2>
+          <p>Structured and clean view for reviewing shared concepts and documenting refinement notes.</p>
+        </header>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Session</h3>
+            <button id="artist-session-btn" class="btn" type="button">Create Artist Session</button>
+            <p class="meta" id="artist-session-meta">No artist session yet.</p>
+          </article>
+
+          <article class="card">
+            <h3>Load Collaboration</h3>
+            <form id="artist-collab-form">
+              <label>Collaboration ID</label>
+              <input name="collaboration_id" placeholder="from Client flow" />
+              <button class="btn" type="submit">Open Collaboration</button>
+            </form>
+            <p class="meta" id="artist-collab-meta">No collaboration loaded.</p>
+          </article>
+
+          <article class="card wide">
+            <h3>Notes</h3>
+            <form id="artist-note-form" class="inline-form">
+              <div>
+                <label>Collaboration ID</label>
+                <input name="collaboration_id" />
+              </div>
+              <div>
+                <label>Concept ID (optional)</label>
+                <input name="concept_id" />
+              </div>
+              <div class="wide-input">
+                <label>Note</label>
+                <input name="note_text" value="Use finer line weight near scar edge." />
+              </div>
+              <button class="btn" type="submit">Submit Note</button>
+            </form>
+            <button id="artist-list-notes-btn" class="btn ghost" type="button">Refresh Notes</button>
+            <div id="artist-notes-list" class="notes-list"></div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <aside class="toast" id="toast"></aside>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReSkin AI | Operations</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-one"></div>
+    <div class="bg-shape bg-two"></div>
+
+    <header class="topbar shell">
+      <div class="brand">ReSkin AI</div>
+      <nav class="nav-links">
+        <a href="/ui/">Home</a>
+        <a href="/ui/client.html">Client</a>
+        <a href="/ui/artist.html">Artist</a>
+        <a class="active" href="/ui/admin.html">Operations</a>
+      </nav>
+    </header>
+
+    <main class="shell single">
+      <section class="workspace-main panel active" id="admin-panel">
+        <header class="panel-head">
+          <h2>Operations and Reliability</h2>
+          <p>Runtime controls for incident response and safe generation governance.</p>
+        </header>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Session</h3>
+            <button id="admin-session-btn" class="btn" type="button">Create Admin Session</button>
+            <p class="meta" id="admin-session-meta">No admin session yet.</p>
+          </article>
+
+          <article class="card">
+            <h3>Generation Switch</h3>
+            <form id="admin-toggle-form" class="inline">
+              <label class="inline">
+                <input type="checkbox" name="disabled" />
+                Disable Generation
+              </label>
+              <button class="btn" type="submit">Apply</button>
+            </form>
+            <button id="admin-metrics-btn" class="btn ghost" type="button">Refresh Metrics</button>
+            <pre id="admin-metrics" class="metrics">{}</pre>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <aside class="toast" id="toast"></aside>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,66 @@
+Metadata-Version: 2.4
+Name: reskin-ai
+Version: 0.1.0
+Summary: ReSkin AI backend service
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0.0,>=0.116.0
+Requires-Dist: uvicorn[standard]<1.0.0,>=0.30.0
+Requires-Dist: pydantic<3.0.0,>=2.8.0
+Requires-Dist: python-multipart<1.0.0,>=0.0.9
+Requires-Dist: sqlalchemy<3.0.0,>=2.0.32
+Provides-Extra: dev
+Requires-Dist: pytest<9.0.0,>=8.3.0; extra == "dev"
+Requires-Dist: httpx<1.0.0,>=0.27.0; extra == "dev"
+Requires-Dist: ruff<1.0.0,>=0.6.0; extra == "dev"
+Requires-Dist: alembic<2.0.0,>=1.13.2; extra == "dev"
+Provides-Extra: postgres
+Requires-Dist: psycopg[binary]<4.0.0,>=3.2.0; extra == "postgres"
+
+# ReSkin AI
+
+Usable backend prototype for ReSkin AI (FastAPI + SQLAlchemy + local media storage).
+
+## Local setup
+
+```bash
+python -m pip install -e .[dev]
+uvicorn reskin_ai.main:app --reload
+```
+
+## Database
+
+Default local database: `sqlite+pysqlite:///storage/reskin.db`  
+Override with env var:
+
+```bash
+set DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST/DBNAME
+```
+
+Run migrations:
+
+```bash
+alembic upgrade head
+```
+
+API docs:
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/healthz`
+
+## Quick demo flow
+
+1. Create a `user` session at `POST /api/v1/auth/session`.
+2. Create consent at `POST /api/v1/consents`.
+3. Upload scar image via multipart at `POST /api/v1/uploads/file`.
+4. Create preferences at `POST /api/v1/preferences`.
+5. Generate concepts at `POST /api/v1/generations`.
+6. Open returned concept `storage_uri` under `/media/...`.
+7. Invite artist via `POST /api/v1/collaborations/invite`.
+8. Artist adds notes via `POST /api/v1/collaborations/{id}/notes`.
+
+## Test and lint
+
+```bash
+ruff check src tests
+pytest
+```

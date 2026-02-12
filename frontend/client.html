@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ReSkin AI | Client Flow</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-one"></div>
+    <div class="bg-shape bg-two"></div>
+
+    <header class="topbar shell">
+      <div class="brand">ReSkin AI</div>
+      <nav class="nav-links">
+        <a href="/ui/">Home</a>
+        <a class="active" href="/ui/client.html">Client</a>
+        <a href="/ui/artist.html">Artist</a>
+        <a href="/ui/admin.html">Operations</a>
+      </nav>
+    </header>
+
+    <main id="studio" class="shell workspace">
+      <aside class="workspace-nav">
+        <h2>Client Flow</h2>
+        <p class="hint">Private and secure. You are in control at every step.</p>
+        <button id="run-sandbox-btn" class="btn ghost" type="button">Auto Fill (Sandbox)</button>
+
+        <section class="progress-card">
+          <h3>Progress</h3>
+          <ul class="progress-list">
+            <li id="progress-user-session"><span class="dot"></span>User session</li>
+            <li id="progress-consent"><span class="dot"></span>Consent</li>
+            <li id="progress-upload"><span class="dot"></span>Image upload</li>
+            <li id="progress-preference"><span class="dot"></span>Style preference</li>
+            <li id="progress-generation"><span class="dot"></span>Concept generation</li>
+            <li id="progress-collaboration"><span class="dot"></span>Artist collaboration</li>
+          </ul>
+        </section>
+      </aside>
+
+      <section class="workspace-main panel active" id="user-panel">
+        <header class="panel-head">
+          <h2>Client Intake and Concept Creation</h2>
+          <p>A psychologically safe workflow for scar-aware exploration.</p>
+        </header>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Session</h3>
+            <button id="user-session-btn" class="btn" type="button">Create User Session</button>
+            <p class="meta" id="user-session-meta">No session yet.</p>
+          </article>
+
+          <article class="card">
+            <h3>Consent</h3>
+            <form id="consent-form">
+              <label>Policy Version</label>
+              <input name="policy_version" value="consent-v1" />
+              <label class="inline">
+                <input type="checkbox" name="disclaimer_accepted" checked />
+                I understand this is non-medical concept support.
+              </label>
+              <button class="btn" type="submit">Save Consent</button>
+            </form>
+            <p class="meta" id="consent-meta">No consent yet.</p>
+          </article>
+
+          <article class="card wide upload-card">
+            <h3>Upload Experience</h3>
+            <p class="hint">Private and secure. Delete anytime.</p>
+            <form id="upload-form">
+              <label>Consent ID</label>
+              <input name="consent_id" placeholder="auto-filled after consent" />
+              <label class="upload-zone" id="upload-dropzone">
+                <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
+                <span class="upload-title">Drop image here or click to choose</span>
+                <span class="upload-sub" id="upload-file-label">PNG, JPG, WEBP</span>
+              </label>
+              <button class="btn" type="submit">Upload Image</button>
+            </form>
+            <p class="meta" id="upload-meta">No upload yet.</p>
+          </article>
+
+          <article class="card wide">
+            <h3>Style Preferences</h3>
+            <div class="choice-row">
+              <button class="choice-chip" data-pref-target="style" data-pref-value="fine line botanical" type="button">
+                Fine line botanical
+              </button>
+              <button class="choice-chip" data-pref-target="style" data-pref-value="minimal geometric" type="button">
+                Minimal geometric
+              </button>
+              <button class="choice-chip" data-pref-target="style" data-pref-value="organic abstract" type="button">
+                Organic abstract
+              </button>
+              <button class="choice-chip" data-pref-add="motifs" data-pref-value="lotus" type="button">Lotus</button>
+              <button class="choice-chip" data-pref-add="motifs" data-pref-value="wind" type="button">Wind</button>
+              <button class="choice-chip" data-pref-add="meaning_keywords" data-pref-value="rebirth" type="button">
+                Rebirth
+              </button>
+            </div>
+            <form id="preference-form" class="pref-form">
+              <div>
+                <label>Style</label>
+                <input name="style" value="floral linework" required />
+              </div>
+              <div>
+                <label>Motifs (comma separated)</label>
+                <input name="motifs" value="lotus,wind,contour" />
+              </div>
+              <div>
+                <label>Meaning Keywords</label>
+                <input name="meaning_keywords" value="rebirth,strength,peace" />
+              </div>
+              <div>
+                <label>Avoid List</label>
+                <input name="avoid_list" value="weapons,dark skull" />
+              </div>
+              <div>
+                <label>Mood</label>
+                <input name="mood" value="calm" />
+              </div>
+              <button class="btn" type="submit">Save Preference</button>
+            </form>
+            <p class="meta" id="preference-meta">No preference yet.</p>
+          </article>
+
+          <article class="card wide">
+            <h3>Concept Gallery</h3>
+            <form id="generate-form" class="inline-form">
+              <div>
+                <label>Upload ID</label>
+                <input name="upload_id" placeholder="auto-filled after upload" />
+              </div>
+              <div>
+                <label>Preference ID</label>
+                <input name="preference_id" placeholder="auto-filled after preference" />
+              </div>
+              <div>
+                <label>Variant Count</label>
+                <input type="number" min="1" max="5" name="variant_count" value="3" />
+              </div>
+              <button class="btn" type="submit">Generate Concepts</button>
+            </form>
+            <p class="meta" id="generation-meta">No generation yet.</p>
+            <div id="concept-grid" class="concept-grid"></div>
+          </article>
+
+          <article class="card wide">
+            <h3>Artist Collaboration</h3>
+            <form id="invite-form" class="inline-form">
+              <div>
+                <label>Artist Actor ID</label>
+                <input name="artist_actor_id" placeholder="from Artist session" required />
+              </div>
+              <div>
+                <label>Concept IDs (comma separated)</label>
+                <input name="concept_ids" placeholder="auto-filled from latest generation" />
+              </div>
+              <button class="btn" type="submit">Invite Artist</button>
+            </form>
+            <p class="meta" id="invite-meta">No collaboration yet.</p>
+            <button id="revoke-btn" class="btn ghost" type="button">Revoke Collaboration</button>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <aside class="toast" id="toast"></aside>
+    <script src="./app.js"></script>
+  </body>
+</html>
