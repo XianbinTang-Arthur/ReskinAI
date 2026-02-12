@@ -69,3 +69,12 @@ Or open `http://127.0.0.1:8000/ui/` and click **Run Onboarding Sandbox** for a o
 ruff check src tests
 pytest
 ```
+
+## Docker Compose (production style)
+
+```bash
+cp .env.prod.example .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+See deployment guide: `docs/DEPLOY_EC2_DOCKER.md`.

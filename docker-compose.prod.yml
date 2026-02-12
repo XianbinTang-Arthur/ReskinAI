@@ -1,0 +1,60 @@
+name: reskinai
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: reskinai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-reskinai}
+      POSTGRES_USER: ${POSTGRES_USER:-reskinai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - reskinai_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reskinai} -d ${POSTGRES_DB:-reskinai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reskinai-api:latest
+    container_name: reskinai-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-reskinai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-reskinai}
+      STORAGE_ROOT: /app/storage
+      WEB_ROOT: /app/frontend
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-auto}
+      MODEL_FALLBACK_ENABLED: ${MODEL_FALLBACK_ENABLED:-true}
+      MODEL_RETRY_ATTEMPTS: ${MODEL_RETRY_ATTEMPTS:-1}
+      MODEL_REQUEST_TIMEOUT_SECONDS: ${MODEL_REQUEST_TIMEOUT_SECONDS:-45}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1}
+      OPENAI_IMAGE_SIZE: ${OPENAI_IMAGE_SIZE:-1024x1024}
+      MODEL_VERSION: ${MODEL_VERSION:-managed-image-v1}
+      PROMPT_VERSION: ${PROMPT_VERSION:-prompt-v1}
+      SAFETY_POLICY_VERSION: ${SAFETY_POLICY_VERSION:-safety-v1}
+      MAX_GENERATION_VARIANTS: ${MAX_GENERATION_VARIANTS:-5}
+      MAX_UPLOAD_SIZE_BYTES: ${MAX_UPLOAD_SIZE_BYTES:-5242880}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
+    volumes:
+      - reskinai_storage:/app/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  reskinai_postgres_data:
+  reskinai_storage:
