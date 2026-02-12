@@ -75,6 +75,7 @@ pytest
 ```bash
 cp .env.prod.example .env.prod
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+bash deploy/ec2/setup_nginx_proxy.sh
 ```
 
 See deployment guide: `docs/DEPLOY_EC2_DOCKER.md`.

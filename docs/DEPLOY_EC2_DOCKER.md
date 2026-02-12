@@ -3,12 +3,14 @@
 This document targets Amazon Linux 2023 EC2 instances and deploys:
 - `reskinai-api` (FastAPI app)
 - `reskinai-postgres` (PostgreSQL 16)
+- `nginx` reverse proxy on `80/443`
 
 ## 1) Security prerequisites
 
 - Ensure Security Group allows:
   - TCP `22` from your IP (SSH)
-  - TCP `8000` from your allowed source(s) for app access
+  - TCP `80` from users
+  - TCP `443` from users (after HTTPS is enabled)
 - Do **not** commit `.env.prod` into git.
 - Rotate any API key that has been exposed in chat/logs.
 
@@ -35,6 +37,9 @@ Required values:
 - `POSTGRES_PASSWORD`
 - `OPENAI_API_KEY` (if using OpenAI generation)
 
+Recommended:
+- `APP_BIND_IP=127.0.0.1` (keep app private behind nginx)
+
 ## 4) Deploy
 
 ```bash
@@ -49,9 +54,31 @@ curl http://127.0.0.1:8000/healthz
 ```
 
 Open:
-- `http://<EC2_PUBLIC_IP>:8000/ui/`
+- `http://<EC2_PUBLIC_IP>/ui/`
 
-## 6) Common operations
+## 6) Configure nginx reverse proxy (HTTP)
+
+```bash
+bash deploy/ec2/setup_nginx_proxy.sh
+```
+
+Optional custom host name:
+
+```bash
+SERVER_NAME=app.example.com bash deploy/ec2/setup_nginx_proxy.sh
+```
+
+## 7) Enable HTTPS with Let's Encrypt (when domain is ready)
+
+```bash
+bash deploy/ec2/enable_https_letsencrypt.sh app.example.com you@example.com
+```
+
+Before running the command:
+- DNS `A` record must point to your EC2 public IP.
+- Security Group must allow port `443`.
+
+## 8) Common operations
 
 Restart:
 
