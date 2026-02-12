@@ -20,4 +20,13 @@ echo "[deploy] Service status:"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
 
 echo "[deploy] Health check:"
-curl -fsS http://127.0.0.1:${APP_PORT:-8000}/healthz || true
+for i in {1..20}; do
+  if curl -fsS "http://127.0.0.1:${APP_PORT:-8000}/healthz" >/dev/null; then
+    echo "[deploy] Health check passed."
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "[deploy] Health check failed."
+exit 1
