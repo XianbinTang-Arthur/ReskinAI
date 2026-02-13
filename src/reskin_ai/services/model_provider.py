@@ -244,7 +244,6 @@ class OpenAIImageProvider:
                     "prompt": prompt,
                     "size": self.image_size,
                     "n": str(variant_count),
-                    "input_fidelity": "high",
                     "response_format": "b64_json",
                 },
                 files=[

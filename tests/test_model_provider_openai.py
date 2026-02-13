@@ -97,7 +97,7 @@ def test_openai_edits_payload_includes_uploaded_image(monkeypatch) -> None:
     assert b'name="image"; filename="upload.png"' in body_bytes
     assert b"Content-Type: image/png" in body_bytes
     assert b"input-image-binary" in body_bytes
-    assert b'name="input_fidelity"' in body_bytes
-    assert b"high" in body_bytes
+    assert b'name="response_format"' in body_bytes
+    assert b"b64_json" in body_bytes
     assert len(assets) == 1
     assert assets[0].content == b"edited-image"
