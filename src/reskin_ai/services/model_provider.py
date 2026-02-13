@@ -66,10 +66,26 @@ class ModelRateLimitError(ModelGenerationError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class ModelAuthError(ModelGenerationError):
+    pass
+
+
+class ModelSafetyBlockedError(ModelGenerationError):
+    pass
+
+
 class ProviderRateLimitError(RuntimeError):
     def __init__(self, message: str, *, retry_after_seconds: int | None = None) -> None:
         super().__init__(message)
         self.retry_after_seconds = retry_after_seconds
+
+
+class ProviderAuthError(RuntimeError):
+    pass
+
+
+class ProviderSafetyBlockedError(RuntimeError):
+    pass
 
 
 class BaseModelProvider(Protocol):
@@ -272,6 +288,8 @@ class OpenAIImageProvider:
             body = _do_request(self.image_model)
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code in {401, 403}:
+                raise ProviderAuthError("OpenAI authentication failed.") from exc
             if exc.code == 429:
                 message = self._extract_openai_error_message(details) or "OpenAI rate limit exceeded."
                 raise ProviderRateLimitError(
@@ -450,12 +468,16 @@ class OpenAIImageProvider:
                 body_text = resp.read().decode("utf-8")
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code in {401, 403}:
+                raise ProviderAuthError("OpenAI authentication failed.") from exc
             if exc.code == 429:
                 message = self._extract_openai_error_message(details) or "OpenAI rate limit exceeded."
                 raise ProviderRateLimitError(
                     message,
                     retry_after_seconds=self._extract_retry_after_seconds(message),
                 ) from exc
+            if exc.code == 400 and self._extract_openai_error_code(details) == "moderation_blocked":
+                raise ProviderSafetyBlockedError("OpenAI safety system blocked the photo preview.") from exc
             raise RuntimeError(f"OpenAI image edit failed: HTTP {exc.code} {details}") from exc
         except error.URLError as exc:
             raise RuntimeError(f"OpenAI image edit network failure: {exc.reason}") from exc
@@ -645,6 +667,13 @@ class ResilientModelProvider:
                     provider_failures=failures,
                     used_fallback=False,
                 )
+            except ProviderAuthError as exc:
+                raise ModelAuthError(
+                    str(exc),
+                    provider=self.primary.provider_name,
+                    retries_used=retries_used,
+                    provider_failures=failures + 1,
+                ) from exc
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 failures += 1
@@ -759,6 +788,20 @@ class ResilientModelProvider:
                     provider_failures=failures,
                     used_fallback=False,
                 )
+            except ProviderAuthError as exc:
+                raise ModelAuthError(
+                    str(exc),
+                    provider=self.primary.provider_name,
+                    retries_used=retries_used,
+                    provider_failures=failures + 1,
+                ) from exc
+            except ProviderSafetyBlockedError as exc:
+                raise ModelSafetyBlockedError(
+                    str(exc),
+                    provider=self.primary.provider_name,
+                    retries_used=retries_used,
+                    provider_failures=failures + 1,
+                ) from exc
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 failures += 1

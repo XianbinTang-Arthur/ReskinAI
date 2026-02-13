@@ -10,7 +10,13 @@ from reskin_ai.repository import InMemoryRepository
 from reskin_ai.schemas import ConceptResponse, GenerationCreateRequest, GenerationResponse, Role
 from reskin_ai.services.compositor import render_tattoo_overlay_preview
 from reskin_ai.services.generation import build_prompt_text, compute_prompt_hash
-from reskin_ai.services.model_provider import ModelGenerationError, ModelRateLimitError, ResilientModelProvider
+from reskin_ai.services.model_provider import (
+    ModelAuthError,
+    ModelGenerationError,
+    ModelRateLimitError,
+    ModelSafetyBlockedError,
+    ResilientModelProvider,
+)
 from reskin_ai.services.safety import SafetyEngine
 from reskin_ai.services.storage import LocalStorageService
 
@@ -132,6 +138,40 @@ def create_generation(
             code="RATE_LIMITED",
             message="Generation is temporarily rate-limited. Please wait and try again.",
             details=details,
+        ) from exc
+    except ModelSafetyBlockedError as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        repo.record_generation_observation(
+            success=False,
+            latency_ms=latency_ms,
+            provider=exc.provider,
+            retries_used=exc.retries_used,
+            provider_failures=exc.provider_failures,
+            used_fallback=False,
+            count_as_request=True,
+        )
+        raise ApiError(
+            status_code=422,
+            code="PROVIDER_SAFETY_BLOCKED",
+            message="Photo-realistic preview was blocked by the AI provider safety system. Try overlay preview instead.",
+            details={"provider": exc.provider},
+        ) from exc
+    except ModelAuthError as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        repo.record_generation_observation(
+            success=False,
+            latency_ms=latency_ms,
+            provider=exc.provider,
+            retries_used=exc.retries_used,
+            provider_failures=exc.provider_failures,
+            used_fallback=False,
+            count_as_request=True,
+        )
+        raise ApiError(
+            status_code=503,
+            code="PROVIDER_AUTH",
+            message="AI provider authentication is misconfigured. Please contact operations.",
+            details={"provider": exc.provider},
         ) from exc
     except ModelGenerationError as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)

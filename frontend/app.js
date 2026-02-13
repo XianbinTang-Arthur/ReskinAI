@@ -33,7 +33,6 @@ const state = {
   const maskBrushEl = document.getElementById("mask-brush");
   const maskClearBtn = document.getElementById("mask-clear-btn");
   const maskSaveBtn = document.getElementById("mask-save-btn");
-  const maskContinueBtn = document.getElementById("mask-continue-btn");
   const maskMetaEl = document.getElementById("mask-meta");
   const generationLoadingEl = document.getElementById("generation-loading");
   const generateBtn = document.getElementById("generate-btn");
@@ -702,26 +701,6 @@ function setupUserFlow() {
 
   updateMaskStatus();
 
-  function refreshMaskContinueState() {
-    if (!maskContinueBtn) {
-      return;
-    }
-    const skipMask = Boolean(maskSkipCheckboxEl && maskSkipCheckboxEl.checked);
-    maskContinueBtn.disabled = !(state.user.maskSaved || skipMask);
-  }
-
-  if (maskSkipCheckboxEl) {
-    maskSkipCheckboxEl.addEventListener("change", () => refreshMaskContinueState());
-  }
-  refreshMaskContinueState();
-
-  if (maskContinueBtn) {
-    maskContinueBtn.addEventListener("click", () => {
-      // Keep the flow gentle: user stays in control.
-      setActiveClientStep("preference");
-    });
-  }
-
   if (generationCancelBtn) {
     generationCancelBtn.addEventListener("click", () => {
       if (generationController) {
@@ -792,7 +771,6 @@ function setupUserFlow() {
         inpaintCheckboxEl.checked = false;
       }
       updateMaskStatus();
-      refreshMaskContinueState();
       state.user.pendingUploadFile = null;
       setUploadFileLabel("PNG, JPG, WEBP");
       setInputValue("generate-form", "upload_id", upload.id);
@@ -907,6 +885,10 @@ function setupUserFlow() {
         } else {
           showToast("Rate limited. Please wait and try again.", "error");
         }
+      } else if (error && typeof error.message === "string" && error.message.includes("503 PROVIDER_AUTH")) {
+        showToast("AI provider is not configured correctly. Please try again later.", "error");
+      } else if (error && typeof error.message === "string" && error.message.includes("422 PROVIDER_SAFETY_BLOCKED")) {
+        showToast("Photo preview blocked by provider safety. Disable photo-realistic preview and retry.", "error");
       } else if (error && typeof error.message === "string" && error.message.includes("503")) {
         showToast("Generation temporarily unavailable (503). Please wait and try again.", "error");
       } else if (error && typeof error.message === "string" && error.message.includes("502")) {
@@ -1047,11 +1029,11 @@ function setupUserFlow() {
         state.user.maskSaved = true;
         state.user.maskUri = String(result.storage_uri || "");
         updateMaskStatus();
-        refreshMaskContinueState();
         if (maskMetaEl) {
           maskMetaEl.textContent = `Saved. mask_uri=${result.storage_uri}`;
         }
-        showToast("Scar area saved.");
+        showToast("Scar area saved. Continuing.", "info");
+        setActiveClientStep("preference");
       } catch (error) {
         showToast(error.message, "error");
       }
