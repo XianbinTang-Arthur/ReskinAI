@@ -315,16 +315,33 @@ class ResilientModelProvider:
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 failures += 1
+                # Keep this log intentionally concise: it is used to debug production provider failures
+                # without leaking sensitive request content.
+                message = str(exc).replace("\n", " ").strip()
+                if len(message) > 700:
+                    message = message[:700] + "..."
                 if attempt < max_attempts - 1:
                     retries_used += 1
                     logger.warning(
-                        "Primary model generation failed; retrying (%s/%s).",
+                        "Primary model generation failed; retrying (%s/%s). error=%s:%s",
                         retries_used,
                         self.retry_attempts,
+                        type(exc).__name__,
+                        message,
                     )
 
         if self.fallback_enabled:
-            logger.warning("Falling back to local model provider after primary failure.")
+            if last_error is not None:
+                message = str(last_error).replace("\n", " ").strip()
+                if len(message) > 700:
+                    message = message[:700] + "..."
+                logger.warning(
+                    "Falling back to local model provider after primary failure. error=%s:%s",
+                    type(last_error).__name__,
+                    message,
+                )
+            else:
+                logger.warning("Falling back to local model provider after primary failure.")
             assets = self.fallback.generate(
                 prompt_text=prompt_text,
                 variant_count=variant_count,

@@ -112,6 +112,24 @@ def create_generation(
             message="Unexpected provider failure during concept generation.",
         ) from exc
 
+    # Never silently return placeholder concepts in production-like environments.
+    if batch.used_fallback and settings.app_env in {"prod", "staging"}:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        repo.record_generation_observation(
+            success=False,
+            latency_ms=latency_ms,
+            provider=batch.provider,
+            retries_used=batch.retries_used,
+            provider_failures=batch.provider_failures,
+            used_fallback=True,
+            count_as_request=True,
+        )
+        raise ApiError(
+            status_code=503,
+            code="GENERATION_DEGRADED",
+            message="AI generation is temporarily unavailable. Please try again later.",
+        )
+
     metadata = {
         "model_version": batch.model_version,
         "prompt_version": settings.prompt_version,
