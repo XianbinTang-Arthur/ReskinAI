@@ -75,11 +75,11 @@ def test_openai_edits_payload_includes_uploaded_image(monkeypatch) -> None:
     provider = OpenAIImageProvider(
         api_key="test-key",
         base_url="https://api.openai.com/v1",
-        image_model="gpt-image-1",
+        image_model="dall-e-2",
         image_size="1024x1024",
         timeout_seconds=5,
     )
-    assets = provider.generate(
+    provider.generate(
         prompt_text="line-art",
         variant_count=1,
         input_image=b"input-image-binary",
@@ -99,5 +99,37 @@ def test_openai_edits_payload_includes_uploaded_image(monkeypatch) -> None:
     assert b"input-image-binary" in body_bytes
     assert b'name="response_format"' in body_bytes
     assert b"b64_json" in body_bytes
+
+
+def test_openai_input_image_with_gpt_image_skips_edits(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout):  # noqa: ANN001
+        captured["url"] = req.full_url
+        payload = {
+            "data": [
+                {
+                    "b64_json": base64.b64encode(b"generated-image").decode("ascii"),
+                }
+            ]
+        }
+        return _FakeResponse(json.dumps(payload))
+
+    monkeypatch.setattr("reskin_ai.services.model_provider.request.urlopen", fake_urlopen)
+    provider = OpenAIImageProvider(
+        api_key="test-key",
+        base_url="https://api.openai.com/v1",
+        image_model="gpt-image-1",
+        image_size="1024x1024",
+        timeout_seconds=5,
+    )
+    assets = provider.generate(
+        prompt_text="line-art",
+        variant_count=1,
+        input_image=b"input-image-binary",
+        input_content_type="image/png",
+    )
+
+    assert assets[0].content == b"generated-image"
+    assert captured["url"] == "https://api.openai.com/v1/images/generations"
     assert len(assets) == 1
-    assert assets[0].content == b"edited-image"

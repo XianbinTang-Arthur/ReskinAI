@@ -236,6 +236,16 @@ class OpenAIImageProvider:
             f"Personalization input: {prompt_text}"
         )
 
+        # OpenAI's classic edits endpoint only supports specific models (commonly `dall-e-2`).
+        # For other models (e.g. `gpt-image-1`) we fall back to text-only generation to keep the
+        # product usable and to avoid uploading sensitive images unnecessarily.
+        if input_image and self.image_model.lower() != "dall-e-2":
+            logger.info(
+                "OpenAI image model does not support edits; generating without user image. model=%s",
+                self.image_model,
+            )
+            return self._generate_without_image(prompt=prompt, variant_count=variant_count)
+
         if input_image:
             extension = self._guess_extension(input_content_type)
             body, content_type = self._encode_multipart(
