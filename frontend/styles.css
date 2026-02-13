@@ -556,7 +556,7 @@ label.inline {
   gap: 0.45rem;
 }
 
-input {
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) {
   width: 100%;
   margin-top: 0.3rem;
   border: 1px solid var(--line-strong);
@@ -570,6 +570,19 @@ input {
 input:focus {
   outline: 2px solid rgba(192, 132, 151, 0.24);
   outline-offset: 1px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+input[type="range"] {
+  width: 180px;
+  margin-top: 0;
 }
 
 .upload-card form {

@@ -33,6 +33,7 @@ const state = {
   const maskBrushEl = document.getElementById("mask-brush");
   const maskClearBtn = document.getElementById("mask-clear-btn");
   const maskSaveBtn = document.getElementById("mask-save-btn");
+  const maskContinueBtn = document.getElementById("mask-continue-btn");
   const maskMetaEl = document.getElementById("mask-meta");
   const generationLoadingEl = document.getElementById("generation-loading");
   const generateBtn = document.getElementById("generate-btn");
@@ -701,6 +702,26 @@ function setupUserFlow() {
 
   updateMaskStatus();
 
+  function refreshMaskContinueState() {
+    if (!maskContinueBtn) {
+      return;
+    }
+    const skipMask = Boolean(maskSkipCheckboxEl && maskSkipCheckboxEl.checked);
+    maskContinueBtn.disabled = !(state.user.maskSaved || skipMask);
+  }
+
+  if (maskSkipCheckboxEl) {
+    maskSkipCheckboxEl.addEventListener("change", () => refreshMaskContinueState());
+  }
+  refreshMaskContinueState();
+
+  if (maskContinueBtn) {
+    maskContinueBtn.addEventListener("click", () => {
+      // Keep the flow gentle: user stays in control.
+      setActiveClientStep("preference");
+    });
+  }
+
   if (generationCancelBtn) {
     generationCancelBtn.addEventListener("click", () => {
       if (generationController) {
@@ -771,6 +792,7 @@ function setupUserFlow() {
         inpaintCheckboxEl.checked = false;
       }
       updateMaskStatus();
+      refreshMaskContinueState();
       state.user.pendingUploadFile = null;
       setUploadFileLabel("PNG, JPG, WEBP");
       setInputValue("generate-form", "upload_id", upload.id);
@@ -1025,6 +1047,7 @@ function setupUserFlow() {
         state.user.maskSaved = true;
         state.user.maskUri = String(result.storage_uri || "");
         updateMaskStatus();
+        refreshMaskContinueState();
         if (maskMetaEl) {
           maskMetaEl.textContent = `Saved. mask_uri=${result.storage_uri}`;
         }

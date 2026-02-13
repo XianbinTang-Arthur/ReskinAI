@@ -84,7 +84,7 @@
             <label>Consent ID</label>
             <input name="consent_id" placeholder="auto-filled after consent" />
             <label class="upload-zone" id="upload-dropzone">
-              <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
+              <input type="file" name="file" accept="image/png,image/jpeg,image/webp" />
               <span class="upload-title">Drop image here or click to choose</span>
               <span class="upload-sub" id="upload-file-label">PNG, JPG, WEBP</span>
             </label>
@@ -109,6 +109,7 @@
               </label>
               <button id="mask-clear-btn" class="btn ghost small" type="button">Clear</button>
               <button id="mask-save-btn" class="btn small" type="button">Save Scar Area</button>
+              <button id="mask-continue-btn" class="btn ghost small" type="button">Continue</button>
             </div>
             <p class="meta" id="mask-meta">Not saved.</p>
           </section>
