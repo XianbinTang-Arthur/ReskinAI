@@ -698,7 +698,7 @@ function setupUserFlow() {
       const payload = {
         upload_id: String(form.get("upload_id") || state.user.uploadId),
         preference_id: String(form.get("preference_id") || state.user.preferenceId),
-        variant_count: Number(form.get("variant_count") || 3),
+        variant_count: Number(form.get("variant_count") || 1),
       };
       if (!payload.upload_id || !payload.preference_id) {
         throw new Error("Upload ID and Preference ID are required.");
@@ -1033,7 +1033,7 @@ async function runOnboardingSandbox() {
       json: {
         upload_id: upload.id,
         preference_id: preference.id,
-        variant_count: 3,
+        variant_count: 1,
       },
     });
     state.user.generationId = generation.id;

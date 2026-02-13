@@ -9,7 +9,7 @@ from reskin_ai.dependencies import ActorContext, get_current_actor, get_model_pr
 from reskin_ai.repository import InMemoryRepository
 from reskin_ai.schemas import ConceptResponse, GenerationCreateRequest, GenerationResponse, Role
 from reskin_ai.services.generation import build_prompt_text, compute_prompt_hash
-from reskin_ai.services.model_provider import ModelGenerationError, ResilientModelProvider
+from reskin_ai.services.model_provider import ModelGenerationError, ModelRateLimitError, ResilientModelProvider
 from reskin_ai.services.safety import SafetyEngine
 from reskin_ai.services.storage import LocalStorageService
 
@@ -52,6 +52,9 @@ def create_generation(
     upload_bytes = storage.read_upload(local_path=upload.get("local_path"))
     upload_content_type = str(upload.get("content_type", "")) or None
     variant_count = min(payload.variant_count, settings.max_generation_variants)
+    # Keep the production flow reliable under tight image rate limits.
+    if settings.app_env in {"prod", "staging"} and settings.openai_image_model.lower().startswith("gpt-image"):
+        variant_count = min(variant_count, 1)
     prompt_text = build_prompt_text(preference)
     safety_result = safety_engine.evaluate(prompt_text)
     if safety_result.blocked:
@@ -78,6 +81,26 @@ def create_generation(
             input_image=upload_bytes,
             input_content_type=upload_content_type,
         )
+    except ModelRateLimitError as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        repo.record_generation_observation(
+            success=False,
+            latency_ms=latency_ms,
+            provider=exc.provider,
+            retries_used=exc.retries_used,
+            provider_failures=exc.provider_failures,
+            used_fallback=False,
+            count_as_request=True,
+        )
+        details: dict[str, object] = {"provider": exc.provider}
+        if exc.retry_after_seconds is not None:
+            details["retry_after_seconds"] = exc.retry_after_seconds
+        raise ApiError(
+            status_code=429,
+            code="RATE_LIMITED",
+            message="Generation is temporarily rate-limited. Please wait and try again.",
+            details=details,
+        ) from exc
     except ModelGenerationError as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
         repo.record_generation_observation(

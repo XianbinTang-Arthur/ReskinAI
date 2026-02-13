@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Protocol
@@ -42,6 +44,31 @@ class ModelGenerationError(RuntimeError):
         self.provider = provider
         self.retries_used = retries_used
         self.provider_failures = provider_failures
+
+
+class ModelRateLimitError(ModelGenerationError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        retries_used: int,
+        provider_failures: int,
+        retry_after_seconds: int | None,
+    ) -> None:
+        super().__init__(
+            message,
+            provider=provider,
+            retries_used=retries_used,
+            provider_failures=provider_failures,
+        )
+        self.retry_after_seconds = retry_after_seconds
+
+
+class ProviderRateLimitError(RuntimeError):
+    def __init__(self, message: str, *, retry_after_seconds: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 class BaseModelProvider(Protocol):
@@ -195,6 +222,17 @@ class OpenAIImageProvider:
         return None
 
     @staticmethod
+    def _extract_retry_after_seconds(message: str) -> int | None:
+        match = re.search(r"try again in (\\d+)s", message, flags=re.IGNORECASE)
+        if not match:
+            return None
+        try:
+            value = int(match.group(1))
+        except ValueError:
+            return None
+        return value if value > 0 else None
+
+    @staticmethod
     def _suggest_model_from_message(message: str) -> str | None:
         # Example: "Invalid value: 'gpt-image-1'. Value must be 'dall-e-2'."
         needle = "Value must be '"
@@ -233,6 +271,12 @@ class OpenAIImageProvider:
             body = _do_request(self.image_model)
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code == 429:
+                message = self._extract_openai_error_message(details) or "OpenAI rate limit exceeded."
+                raise ProviderRateLimitError(
+                    message,
+                    retry_after_seconds=self._extract_retry_after_seconds(message),
+                ) from exc
             message = self._extract_openai_error_message(details) or ""
             suggested = self._suggest_model_from_message(message) if message else None
             if suggested and suggested.lower() != self.image_model.lower():
@@ -328,6 +372,12 @@ class OpenAIImageProvider:
                 body = resp.read().decode("utf-8")
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code == 429:
+                message = self._extract_openai_error_message(details) or "OpenAI rate limit exceeded."
+                raise ProviderRateLimitError(
+                    message,
+                    retry_after_seconds=self._extract_retry_after_seconds(message),
+                ) from exc
             if input_image and exc.code == 400 and self._extract_openai_error_code(details) == "moderation_blocked":
                 # The uploaded photo may be flagged by the image safety system. For emotional-safety and privacy,
                 # automatically retry without sending the user's image.
@@ -427,6 +477,17 @@ class ResilientModelProvider:
                 message = str(exc).replace("\n", " ").strip()
                 if len(message) > 700:
                     message = message[:700] + "..."
+                if isinstance(exc, ProviderRateLimitError):
+                    # Optional: respect retry-after hints for small waits to reduce user-visible failures.
+                    wait_seconds = exc.retry_after_seconds
+                    if attempt < max_attempts - 1 and wait_seconds and wait_seconds <= 12:
+                        logger.warning(
+                            "Primary model rate-limited; waiting %ss then retrying (%s/%s).",
+                            wait_seconds,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        time.sleep(wait_seconds)
                 if attempt < max_attempts - 1:
                     retries_used += 1
                     logger.warning(
@@ -436,6 +497,15 @@ class ResilientModelProvider:
                         type(exc).__name__,
                         message,
                     )
+
+        if isinstance(last_error, ProviderRateLimitError):
+            raise ModelRateLimitError(
+                str(last_error),
+                provider=self.primary.provider_name,
+                retries_used=retries_used,
+                provider_failures=failures,
+                retry_after_seconds=last_error.retry_after_seconds,
+            )
 
         if self.fallback_enabled:
             if last_error is not None:
