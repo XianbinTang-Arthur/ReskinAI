@@ -20,7 +20,7 @@ class _FakeResponse:
         return self._body
 
 
-def test_openai_generations_payload_includes_response_format(monkeypatch) -> None:
+def test_openai_generations_payload_omits_response_format(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_urlopen(req, timeout):  # noqa: ANN001
@@ -49,7 +49,7 @@ def test_openai_generations_payload_includes_response_format(monkeypatch) -> Non
     request_body = captured["body"]
     assert isinstance(request_body, (bytes, bytearray))
     payload = json.loads(bytes(request_body).decode("utf-8"))
-    assert payload.get("response_format") == "b64_json"
+    assert "response_format" not in payload
     assert captured["url"] == "https://api.openai.com/v1/images/generations"
     assert len(assets) == 1
     assert assets[0].content == b"generated-image"
@@ -97,8 +97,7 @@ def test_openai_edits_payload_includes_uploaded_image(monkeypatch) -> None:
     assert b'name="image"; filename="upload.png"' in body_bytes
     assert b"Content-Type: image/png" in body_bytes
     assert b"input-image-binary" in body_bytes
-    assert b'name="response_format"' in body_bytes
-    assert b"b64_json" in body_bytes
+    assert b'name="response_format"' not in body_bytes
 
 
 def test_openai_input_image_with_gpt_image_skips_edits(monkeypatch) -> None:

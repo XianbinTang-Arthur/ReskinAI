@@ -215,8 +215,6 @@ class OpenAIImageProvider:
                 "prompt": prompt,
                 "size": self.image_size,
                 "n": variant_count,
-                # Prefer base64 to avoid handling expiring URLs.
-                "response_format": "b64_json",
             }
             data = json.dumps(payload).encode("utf-8")
             req = request.Request(
@@ -304,7 +302,6 @@ class OpenAIImageProvider:
                     "prompt": prompt,
                     "size": self.image_size,
                     "n": str(variant_count),
-                    "response_format": "b64_json",
                 },
                 files=[
                     (
