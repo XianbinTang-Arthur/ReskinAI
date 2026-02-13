@@ -91,6 +91,27 @@
             <button class="btn" type="submit">Upload Image</button>
           </form>
           <p class="meta" id="upload-meta">No upload yet.</p>
+
+          <section class="mask-editor" id="mask-editor" hidden>
+            <h4>Mark Your Scar Area</h4>
+            <p class="hint">
+              Optional but recommended. This stays private. Use a gentle brush to indicate where you'd like the concept
+              to sit.
+            </p>
+            <div class="mask-stage" id="mask-stage">
+              <img id="mask-base-image" alt="Uploaded scar preview" />
+              <canvas id="mask-canvas" aria-label="Scar mask editor"></canvas>
+            </div>
+            <div class="mask-tools">
+              <label class="inline">
+                Brush
+                <input id="mask-brush" type="range" min="6" max="48" value="18" />
+              </label>
+              <button id="mask-clear-btn" class="btn ghost small" type="button">Clear</button>
+              <button id="mask-save-btn" class="btn small" type="button">Save Scar Area</button>
+            </div>
+            <p class="meta" id="mask-meta">Not saved.</p>
+          </section>
         </article>
 
         <article class="step-panel" id="step-preference">
@@ -152,8 +173,12 @@
               <label>Variant Count</label>
               <input type="number" min="1" max="5" name="variant_count" value="1" />
             </div>
-            <button class="btn" type="submit">Generate Concepts</button>
+            <button class="btn" id="generate-btn" type="submit">Generate Concepts</button>
           </form>
+          <div class="loading-row" id="generation-loading" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="hint">Generating. This can take 20 to 60 seconds. Please do not refresh or click repeatedly.</span>
+          </div>
           <p class="meta" id="generation-meta">No generation yet.</p>
           <div id="concept-grid" class="concept-grid"></div>
         </article>

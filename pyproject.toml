@@ -26,6 +26,9 @@ dev = [
 postgres = [
   "psycopg[binary]>=3.2.0,<4.0.0",
 ]
+render = [
+  "pillow>=10.4.0,<12.0.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

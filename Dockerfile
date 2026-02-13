@@ -17,7 +17,7 @@ COPY frontend ./frontend
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 
 RUN pip install --upgrade pip \
-    && pip install ".[postgres]" "alembic>=1.13.2,<2.0.0" \
+    && pip install ".[postgres,render]" "alembic>=1.13.2,<2.0.0" \
     && chmod +x /entrypoint.sh
 
 RUN useradd --create-home --shell /bin/bash appuser \

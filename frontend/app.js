@@ -23,8 +23,17 @@
   },
 };
 
-const toastEl = document.getElementById("toast");
-const conceptGridEl = document.getElementById("concept-grid");
+  const toastEl = document.getElementById("toast");
+  const conceptGridEl = document.getElementById("concept-grid");
+  const maskEditorEl = document.getElementById("mask-editor");
+  const maskBaseImageEl = document.getElementById("mask-base-image");
+  const maskCanvasEl = document.getElementById("mask-canvas");
+  const maskBrushEl = document.getElementById("mask-brush");
+  const maskClearBtn = document.getElementById("mask-clear-btn");
+  const maskSaveBtn = document.getElementById("mask-save-btn");
+  const maskMetaEl = document.getElementById("mask-meta");
+  const generationLoadingEl = document.getElementById("generation-loading");
+  const generateBtn = document.getElementById("generate-btn");
 const clientStepButtons = [...document.querySelectorAll("#client-stepper .step-btn")];
 const clientStepPanels = [...document.querySelectorAll("#user-panel .step-panel")];
 const artistStepButtons = [...document.querySelectorAll("#artist-stepper .step-btn")];
@@ -654,11 +663,13 @@ function setupUserFlow() {
       payload.append("file", file);
       const upload = await request("/api/v1/uploads/file", { method: "POST", token, formData: payload });
       state.user.uploadId = upload.id;
+      state.user.uploadStorageUri = upload.storage_uri;
       state.user.pendingUploadFile = null;
       setUploadFileLabel("PNG, JPG, WEBP");
       setInputValue("generate-form", "upload_id", upload.id);
       setMeta("upload-meta", `upload_id=${upload.id}\nuri=${upload.storage_uri}`);
       refreshFlowProgress();
+      initMaskEditor(upload.storage_uri, upload.id);
       setActiveClientStep("preference");
       showToast("Scar image uploaded.");
     } catch (error) {
@@ -703,6 +714,7 @@ function setupUserFlow() {
       if (!payload.upload_id || !payload.preference_id) {
         throw new Error("Upload ID and Preference ID are required.");
       }
+      setGenerating(true);
       const generation = await request("/api/v1/generations", { method: "POST", token, json: payload });
       state.user.generationId = generation.id;
       state.user.conceptIds = generation.concepts.map((item) => item.id);
@@ -717,8 +729,133 @@ function setupUserFlow() {
       showToast("Concept generation completed.");
     } catch (error) {
       showToast(error.message, "error");
+    } finally {
+      setGenerating(false);
     }
   });
+
+  function setGenerating(active) {
+    if (generationLoadingEl) {
+      generationLoadingEl.hidden = !active;
+    }
+    if (generateBtn) {
+      generateBtn.disabled = Boolean(active);
+      generateBtn.textContent = active ? "Generating..." : "Generate Concepts";
+    }
+  }
+
+  function initMaskEditor(imageUri, uploadId) {
+    if (!maskEditorEl || !maskBaseImageEl || !maskCanvasEl || !maskBrushEl || !maskClearBtn || !maskSaveBtn) {
+      return;
+    }
+    maskEditorEl.hidden = false;
+    maskBaseImageEl.src = imageUri;
+
+    const ctx = maskCanvasEl.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    let drawing = false;
+    let last = null;
+
+    function resizeCanvasToImage() {
+      const rect = maskBaseImageEl.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      const prev = ctx.getImageData(0, 0, maskCanvasEl.width || 1, maskCanvasEl.height || 1);
+      maskCanvasEl.width = width;
+      maskCanvasEl.height = height;
+      ctx.clearRect(0, 0, width, height);
+      try {
+        ctx.putImageData(prev, 0, 0);
+      } catch {
+        // ignore if previous canvas was empty or mismatched
+      }
+    }
+
+    maskBaseImageEl.addEventListener("load", () => {
+      resizeCanvasToImage();
+      if (maskMetaEl) {
+        maskMetaEl.textContent = "Draw on top of the photo to mark the scar area, then save.";
+      }
+    });
+    window.addEventListener("resize", () => resizeCanvasToImage());
+
+    function toLocalPoint(event) {
+      const rect = maskCanvasEl.getBoundingClientRect();
+      const clientX = event.touches && event.touches[0] ? event.touches[0].clientX : event.clientX;
+      const clientY = event.touches && event.touches[0] ? event.touches[0].clientY : event.clientY;
+      return {
+        x: (clientX - rect.left) * (maskCanvasEl.width / rect.width),
+        y: (clientY - rect.top) * (maskCanvasEl.height / rect.height),
+      };
+    }
+
+    function stroke(from, to) {
+      const brush = Number(maskBrushEl.value || 18);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(255, 80, 120, 0.55)";
+      ctx.lineWidth = brush;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
+
+    function onDown(event) {
+      drawing = true;
+      last = toLocalPoint(event);
+      event.preventDefault();
+    }
+    function onMove(event) {
+      if (!drawing || !last) {
+        return;
+      }
+      const next = toLocalPoint(event);
+      stroke(last, next);
+      last = next;
+      event.preventDefault();
+    }
+    function onUp(event) {
+      drawing = false;
+      last = null;
+      event.preventDefault();
+    }
+
+    maskCanvasEl.onmousedown = onDown;
+    maskCanvasEl.onmousemove = onMove;
+    window.addEventListener("mouseup", onUp);
+    maskCanvasEl.ontouchstart = onDown;
+    maskCanvasEl.ontouchmove = onMove;
+    maskCanvasEl.ontouchend = onUp;
+
+    maskClearBtn.onclick = () => {
+      ctx.clearRect(0, 0, maskCanvasEl.width, maskCanvasEl.height);
+      if (maskMetaEl) {
+        maskMetaEl.textContent = "Cleared. Draw again, then save.";
+      }
+    };
+
+    maskSaveBtn.onclick = async () => {
+      try {
+        const token = requireToken("user");
+        const blob = await new Promise((resolve) => maskCanvasEl.toBlob(resolve, "image/png"));
+        if (!blob) {
+          throw new Error("Unable to export mask.");
+        }
+        const fd = new FormData();
+        fd.append("file", blob, "scar_mask.png");
+        const result = await request(`/api/v1/uploads/${uploadId}/mask`, { method: "POST", token, formData: fd });
+        if (maskMetaEl) {
+          maskMetaEl.textContent = `Saved. mask_uri=${result.storage_uri}`;
+        }
+        showToast("Scar area saved.");
+      } catch (error) {
+        showToast(error.message, "error");
+      }
+    };
+  }
 
   conceptGridEl && conceptGridEl.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-action]");

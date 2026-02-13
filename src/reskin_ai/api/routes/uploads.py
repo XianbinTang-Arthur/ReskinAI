@@ -83,3 +83,43 @@ async def create_upload_file(
     }
     record = repo.create_upload(actor.actor_id, payload)
     return UploadResponse(**record)
+
+
+@router.post("/{upload_id}/mask")
+async def upload_scar_mask(
+    upload_id: str,
+    file: UploadFile = File(...),
+    actor: ActorContext = Depends(get_current_actor),
+    repo: InMemoryRepository = Depends(get_repo),
+    storage: LocalStorageService = Depends(get_storage),
+) -> dict[str, object]:
+    if actor.role != Role.user:
+        raise ApiError(status_code=403, code="FORBIDDEN", message="Only end users can upload scar masks.")
+    upload = repo.get_upload(upload_id)
+    if upload is None:
+        raise ApiError(status_code=404, code="NOT_FOUND", message="Upload not found.")
+    if upload["actor_id"] != actor.actor_id:
+        raise ApiError(status_code=403, code="FORBIDDEN", message="Upload does not belong to current actor.")
+    if file.content_type != "image/png":
+        raise ApiError(
+            status_code=400,
+            code="UNSUPPORTED_MEDIA_TYPE",
+            message="Mask must be a PNG image.",
+        )
+    content = await file.read()
+    if not content:
+        raise ApiError(status_code=400, code="VALIDATION_ERROR", message="Empty mask upload is not allowed.")
+    if len(content) > settings.max_upload_size_bytes:
+        raise ApiError(
+            status_code=413,
+            code="PAYLOAD_TOO_LARGE",
+            message="Uploaded mask exceeds size limit.",
+            details={"max_upload_size_bytes": settings.max_upload_size_bytes},
+        )
+    saved = storage.save_upload_mask(upload_id=upload_id, content=content)
+    return {
+        "upload_id": upload_id,
+        "storage_uri": saved["storage_uri"],
+        "size_bytes": saved["size_bytes"],
+        "checksum": saved["checksum"],
+    }

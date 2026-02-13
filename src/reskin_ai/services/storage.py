@@ -43,6 +43,25 @@ class LocalStorageService:
             "checksum": checksum,
         }
 
+    def save_upload_mask(self, *, upload_id: str, content: bytes) -> dict[str, str | int]:
+        # Store a user-provided mask alongside uploads without changing DB schema.
+        stored_name = f"{upload_id}_mask.png"
+        path = self.uploads_dir / stored_name
+        path.write_bytes(content)
+        checksum = hashlib.sha256(content).hexdigest()
+        return {
+            "storage_uri": f"/media/uploads/{stored_name}",
+            "local_path": str(path),
+            "size_bytes": len(content),
+            "checksum": checksum,
+        }
+
+    def read_upload_mask(self, *, upload_id: str) -> bytes | None:
+        path = self.uploads_dir / f"{upload_id}_mask.png"
+        if not path.exists() or not path.is_file():
+            return None
+        return path.read_bytes()
+
     def read_upload(self, *, local_path: str | None) -> bytes | None:
         if not local_path:
             return None

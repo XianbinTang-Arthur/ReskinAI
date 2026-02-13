@@ -8,6 +8,7 @@ from reskin_ai.core.errors import ApiError
 from reskin_ai.dependencies import ActorContext, get_current_actor, get_model_provider, get_repo, get_storage
 from reskin_ai.repository import InMemoryRepository
 from reskin_ai.schemas import ConceptResponse, GenerationCreateRequest, GenerationResponse, Role
+from reskin_ai.services.compositor import render_tattoo_overlay_preview
 from reskin_ai.services.generation import build_prompt_text, compute_prompt_hash
 from reskin_ai.services.model_provider import ModelGenerationError, ModelRateLimitError, ResilientModelProvider
 from reskin_ai.services.safety import SafetyEngine
@@ -51,6 +52,7 @@ def create_generation(
         )
     upload_bytes = storage.read_upload(local_path=upload.get("local_path"))
     upload_content_type = str(upload.get("content_type", "")) or None
+    scar_mask_bytes = storage.read_upload_mask(upload_id=payload.upload_id)
     variant_count = min(payload.variant_count, settings.max_generation_variants)
     # Keep the production flow reliable under tight image rate limits.
     if settings.app_env in {"prod", "staging"} and settings.openai_image_model.lower().startswith("gpt-image"):
@@ -183,11 +185,23 @@ def create_generation(
             message="Provider returned inconsistent concept count.",
         )
     for concept, asset in zip(concepts_payload, batch.assets, strict=False):
-        saved = storage.save_concept_asset(
-            concept_id=concept["id"],
-            content=asset.content,
-            extension=asset.extension,
-        )
+        content = asset.content
+        extension = asset.extension
+        if scar_mask_bytes and upload_bytes:
+            # Render the result as an overlay on the user's own photo for scar-aware personalization.
+            try:
+                content = render_tattoo_overlay_preview(
+                    base_image_bytes=upload_bytes,
+                    scar_mask_bytes=scar_mask_bytes,
+                    tattoo_image_bytes=asset.content,
+                )
+                extension = ".png"
+            except Exception:  # noqa: BLE001
+                # If compositing fails, keep the provider output rather than failing the generation.
+                content = asset.content
+                extension = asset.extension
+
+        saved = storage.save_concept_asset(concept_id=concept["id"], content=content, extension=extension)
         repo.update_concept_storage(
             concept["id"],
             storage_uri=str(saved["storage_uri"]),
