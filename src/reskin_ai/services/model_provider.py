@@ -178,27 +178,77 @@ class OpenAIImageProvider:
             return code.strip()
         return None
 
+    @staticmethod
+    def _extract_openai_error_message(details: str) -> str | None:
+        try:
+            parsed = json.loads(details)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        err = parsed.get("error")
+        if not isinstance(err, dict):
+            return None
+        msg = err.get("message")
+        if isinstance(msg, str) and msg.strip():
+            return msg.strip()
+        return None
+
+    @staticmethod
+    def _suggest_model_from_message(message: str) -> str | None:
+        # Example: "Invalid value: 'gpt-image-1'. Value must be 'dall-e-2'."
+        needle = "Value must be '"
+        start = message.find(needle)
+        if start == -1:
+            return None
+        start += len(needle)
+        end = message.find("'", start)
+        if end == -1:
+            return None
+        candidate = message[start:end].strip()
+        return candidate or None
+
     def _generate_without_image(self, *, prompt: str, variant_count: int) -> list[GeneratedAsset]:
-        payload = {
-            "model": self.image_model,
-            "prompt": prompt,
-            "size": self.image_size,
-            "n": variant_count,
-            # Prefer base64 to avoid handling expiring URLs.
-            "response_format": "b64_json",
-        }
-        data = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            url=f"{self.base_url}/images/generations",
-            data=data,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-        with request.urlopen(req, timeout=self.timeout_seconds) as resp:
-            body = resp.read().decode("utf-8")
+        def _do_request(model_name: str) -> str:
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "size": self.image_size,
+                "n": variant_count,
+                # Prefer base64 to avoid handling expiring URLs.
+                "response_format": "b64_json",
+            }
+            data = json.dumps(payload).encode("utf-8")
+            req = request.Request(
+                url=f"{self.base_url}/images/generations",
+                data=data,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                return resp.read().decode("utf-8")
+
+        try:
+            body = _do_request(self.image_model)
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            message = self._extract_openai_error_message(details) or ""
+            suggested = self._suggest_model_from_message(message) if message else None
+            if suggested and suggested.lower() != self.image_model.lower():
+                logger.warning(
+                    "OpenAI image model rejected; retrying with suggested model. requested=%s suggested=%s",
+                    self.image_model,
+                    suggested,
+                )
+                body = _do_request(suggested)
+            else:
+                raise RuntimeError(f"OpenAI image generation failed: HTTP {exc.code} {details}") from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"OpenAI image generation network failure: {exc.reason}") from exc
+
         parsed = json.loads(body)
         outputs = parsed.get("data", [])
         if not isinstance(outputs, list) or not outputs:
