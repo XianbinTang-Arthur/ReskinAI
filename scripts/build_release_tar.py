@@ -20,10 +20,20 @@ EXCLUDES = {
     "tmp_myKey.ppk",
 }
 
+ALLOWLIST = {
+    ".env.prod.example",
+}
+
 
 def should_include(rel: Path) -> bool:
     parts = rel.parts
     if not parts:
+        return False
+    # Never package real env files or private keys into release tarballs.
+    name = rel.name
+    if name.startswith(".env") and name not in ALLOWLIST:
+        return False
+    if name.endswith((".pem", ".ppk", ".key")):
         return False
     if parts[0] in EXCLUDES:
         return False
@@ -53,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
