@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import re
@@ -314,6 +315,174 @@ class OpenAIImageProvider:
             )
         return assets[:variant_count]
 
+    def _parse_target_size(self) -> int:
+        # Expect strings like "1024x1024". DALL-E 2 edits are square.
+        raw = (self.image_size or "").lower().strip()
+        match = re.match(r"^(\\d+)x(\\d+)$", raw)
+        if not match:
+            return 1024
+        try:
+            w = int(match.group(1))
+            h = int(match.group(2))
+        except ValueError:
+            return 1024
+        return w if w == h and w in {256, 512, 1024} else 1024
+
+    @staticmethod
+    def _fit_square_canvas(*, img, edge: int, resample, fill_rgba: tuple[int, int, int, int]):
+        from PIL import Image  # type: ignore
+
+        w, h = img.size
+        if w <= 0 or h <= 0:
+            canvas = Image.new("RGBA", (edge, edge), fill_rgba)
+            return canvas
+        scale = min(edge / w, edge / h)
+        new_size = (max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+        if new_size != img.size:
+            img = img.resize(new_size, resample=resample)
+        canvas = Image.new("RGBA", (edge, edge), fill_rgba)
+        px = (edge - img.size[0]) // 2
+        py = (edge - img.size[1]) // 2
+        canvas.paste(img, (px, py))
+        return canvas
+
+    def _prepare_edit_image_and_mask(
+        self,
+        *,
+        base_image: bytes,
+        base_content_type: str | None,
+        scar_mask_png: bytes,
+    ) -> tuple[bytes, bytes]:
+        """
+        DALL-E 2 edits expect:
+        - image + mask as PNG
+        - image + mask with same dimensions
+        - mask alpha: transparent pixels indicate the area to replace
+        """
+
+        from PIL import Image, ImageFilter, ImageOps  # type: ignore
+
+        edge = self._parse_target_size()
+        base = Image.open(io.BytesIO(base_image)).convert("RGBA")
+        # Use a calm fill color based on a center pixel to avoid harsh borders.
+        cx = max(0, min(base.size[0] - 1, base.size[0] // 2))
+        cy = max(0, min(base.size[1] - 1, base.size[1] // 2))
+        r, g, b, _a = base.getpixel((cx, cy))
+        fill = (int(r), int(g), int(b), 255)
+        base_sq = self._fit_square_canvas(
+            img=base,
+            edge=edge,
+            resample=Image.Resampling.LANCZOS,
+            fill_rgba=fill,
+        )
+        out_img = io.BytesIO()
+        base_sq.save(out_img, format="PNG", optimize=True)
+
+        mask_src = Image.open(io.BytesIO(scar_mask_png)).convert("RGBA")
+        # The canvas mask uses alpha in the painted region. Convert to a binary region mask.
+        region = mask_src.getchannel("A").point(lambda p: 255 if p > 16 else 0)
+        region = region.filter(ImageFilter.GaussianBlur(radius=1.2))
+        # OpenAI edits: transparent pixels indicate the area to replace.
+        alpha = ImageOps.invert(region).convert("L")
+        mask_rgba = Image.new("RGBA", mask_src.size, (0, 0, 0, 255))
+        mask_rgba.putalpha(alpha)
+        mask_sq = self._fit_square_canvas(
+            img=mask_rgba,
+            edge=edge,
+            resample=Image.Resampling.NEAREST,
+            fill_rgba=(0, 0, 0, 255),
+        )
+        out_mask = io.BytesIO()
+        mask_sq.save(out_mask, format="PNG", optimize=True)
+        return out_img.getvalue(), out_mask.getvalue()
+
+    def edit_with_mask(
+        self,
+        *,
+        prompt_text: str,
+        variant_count: int,
+        base_image: bytes,
+        base_content_type: str | None,
+        scar_mask_png: bytes,
+        edit_model: str,
+    ) -> list[GeneratedAsset]:
+        # Photo-realistic preview: preserve skin texture outside the masked area.
+        prompt = (
+            "Apply a tasteful tattoo design ONLY inside the masked region. "
+            "Keep the rest of the photo unchanged: preserve skin texture, lighting, color, and anatomy. "
+            "Tattoo style should be calm, premium, and respectful; no text, no logos, no watermarks. "
+            f"Design preferences: {prompt_text}"
+        )
+
+        try:
+            prepared_image, prepared_mask = self._prepare_edit_image_and_mask(
+                base_image=base_image,
+                base_content_type=base_content_type,
+                scar_mask_png=scar_mask_png,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"Unable to prepare image/mask for edits: {exc}") from exc
+
+        body, content_type = self._encode_multipart(
+            fields={
+                "model": edit_model,
+                "prompt": prompt,
+                "size": self.image_size,
+                "n": str(variant_count),
+            },
+            files=[
+                ("image", "photo.png", "image/png", prepared_image),
+                ("mask", "mask.png", "image/png", prepared_mask),
+            ],
+        )
+        req = request.Request(
+            url=f"{self.base_url}/images/edits",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": content_type,
+            },
+        )
+
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                body_text = resp.read().decode("utf-8")
+        except error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="ignore")
+            if exc.code == 429:
+                message = self._extract_openai_error_message(details) or "OpenAI rate limit exceeded."
+                raise ProviderRateLimitError(
+                    message,
+                    retry_after_seconds=self._extract_retry_after_seconds(message),
+                ) from exc
+            raise RuntimeError(f"OpenAI image edit failed: HTTP {exc.code} {details}") from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"OpenAI image edit network failure: {exc.reason}") from exc
+
+        parsed = json.loads(body_text)
+        outputs = parsed.get("data", [])
+        if not isinstance(outputs, list) or not outputs:
+            raise RuntimeError("OpenAI image edit returned empty data payload.")
+
+        assets: list[GeneratedAsset] = []
+        for item in outputs:
+            if not isinstance(item, dict):
+                continue
+            b64_image = item.get("b64_json")
+            if isinstance(b64_image, str) and b64_image:
+                assets.append(GeneratedAsset(content=base64.b64decode(b64_image), extension=".png"))
+                continue
+            image_url = item.get("url")
+            if isinstance(image_url, str) and image_url:
+                assets.append(GeneratedAsset(content=self._download_image_bytes(image_url), extension=".png"))
+
+        if len(assets) < variant_count:
+            raise RuntimeError(
+                f"OpenAI image edit returned {len(assets)} images; expected {variant_count}.",
+            )
+        return assets[:variant_count]
+
     def generate(
         self,
         *,
@@ -542,6 +711,90 @@ class ResilientModelProvider:
             )
 
         message = str(last_error) if last_error else "Unknown model provider error."
+        raise ModelGenerationError(
+            message,
+            provider=self.primary.provider_name,
+            retries_used=retries_used,
+            provider_failures=failures,
+        )
+
+    def inpaint_preview(
+        self,
+        *,
+        prompt_text: str,
+        variant_count: int,
+        base_image: bytes,
+        base_content_type: str | None,
+        scar_mask_png: bytes,
+        edit_model: str,
+    ) -> GenerationBatch:
+        if self.primary is None or not hasattr(self.primary, "edit_with_mask"):
+            raise ModelGenerationError(
+                "Primary model provider does not support inpaint previews.",
+                provider=self.fallback.provider_name if self.primary is None else self.primary.provider_name,
+                retries_used=0,
+                provider_failures=0,
+            )
+
+        failures = 0
+        retries_used = 0
+        max_attempts = self.retry_attempts + 1
+        last_error: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                # mypy: dynamic capability check via hasattr above.
+                assets = self.primary.edit_with_mask(  # type: ignore[attr-defined]
+                    prompt_text=prompt_text,
+                    variant_count=variant_count,
+                    base_image=base_image,
+                    base_content_type=base_content_type,
+                    scar_mask_png=scar_mask_png,
+                    edit_model=edit_model,
+                )
+                return GenerationBatch(
+                    assets=assets,
+                    provider=self.primary.provider_name,
+                    model_version=f"{self.primary.model_version}+edits",
+                    retries_used=retries_used,
+                    provider_failures=failures,
+                    used_fallback=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                failures += 1
+                message = str(exc).replace("\n", " ").strip()
+                if len(message) > 700:
+                    message = message[:700] + "..."
+                if isinstance(exc, ProviderRateLimitError):
+                    wait_seconds = exc.retry_after_seconds
+                    if attempt < max_attempts - 1 and wait_seconds and wait_seconds <= 12:
+                        logger.warning(
+                            "Primary inpaint rate-limited; waiting %ss then retrying (%s/%s).",
+                            wait_seconds,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        time.sleep(wait_seconds)
+                if attempt < max_attempts - 1:
+                    retries_used += 1
+                    logger.warning(
+                        "Primary inpaint failed; retrying (%s/%s). error=%s:%s",
+                        retries_used,
+                        self.retry_attempts,
+                        type(exc).__name__,
+                        message,
+                    )
+
+        if isinstance(last_error, ProviderRateLimitError):
+            raise ModelRateLimitError(
+                str(last_error),
+                provider=self.primary.provider_name,
+                retries_used=retries_used,
+                provider_failures=failures,
+                retry_after_seconds=last_error.retry_after_seconds,
+            )
+
+        message = str(last_error) if last_error else "Unknown inpaint provider error."
         raise ModelGenerationError(
             message,
             provider=self.primary.provider_name,

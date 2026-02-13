@@ -85,7 +85,12 @@ class UploadResponse(BaseModel):
 class GenerationCreateRequest(BaseModel):
     upload_id: str
     preference_id: str
-    variant_count: int = Field(default=3, ge=1, le=5)
+    variant_count: int = Field(default=1, ge=1, le=5)
+    # Preview modes:
+    # - overlay: generate a clean tattoo asset and render a local ink preview over the photo (default).
+    # - inpaint: send the photo + scar mask to the provider for a photo-realistic preview (explicit opt-in).
+    preview_mode: str = Field(default="overlay", pattern="^(overlay|inpaint)$")
+    send_image_to_provider: bool = False
 
 
 class ConceptResponse(BaseModel):

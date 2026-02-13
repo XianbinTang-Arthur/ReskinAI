@@ -54,6 +54,10 @@ def create_generation(
     upload_content_type = str(upload.get("content_type", "")) or None
     scar_mask_bytes = storage.read_upload_mask(upload_id=payload.upload_id)
     variant_count = min(payload.variant_count, settings.max_generation_variants)
+    preview_mode = (getattr(payload, "preview_mode", "overlay") or "overlay").lower()
+    send_image = bool(getattr(payload, "send_image_to_provider", False))
+    if preview_mode == "inpaint":
+        variant_count = min(variant_count, 1)
     # Keep the production flow reliable under tight image rate limits.
     if settings.app_env in {"prod", "staging"} and settings.openai_image_model.lower().startswith("gpt-image"):
         variant_count = min(variant_count, 1)
@@ -77,12 +81,38 @@ def create_generation(
         )
 
     try:
-        batch = model_provider.generate(
-            prompt_text=prompt_text,
-            variant_count=variant_count,
-            input_image=upload_bytes,
-            input_content_type=upload_content_type,
-        )
+        if preview_mode == "inpaint":
+            if not send_image:
+                raise ApiError(
+                    status_code=422,
+                    code="OPT_IN_REQUIRED",
+                    message="Photo preview requires explicit opt-in to send the photo to the AI provider.",
+                )
+            if not upload_bytes:
+                raise ApiError(status_code=400, code="INVALID_UPLOAD", message="Upload content unavailable.")
+            if not scar_mask_bytes:
+                raise ApiError(
+                    status_code=422,
+                    code="MASK_REQUIRED",
+                    message="Photo preview requires a saved scar mask.",
+                )
+            batch = model_provider.inpaint_preview(
+                prompt_text=prompt_text,
+                variant_count=variant_count,
+                base_image=upload_bytes,
+                base_content_type=upload_content_type,
+                scar_mask_png=scar_mask_bytes,
+                edit_model=settings.openai_edit_model,
+            )
+        else:
+            batch = model_provider.generate(
+                prompt_text=prompt_text,
+                variant_count=variant_count,
+                input_image=upload_bytes,
+                input_content_type=upload_content_type,
+            )
+    except ApiError:
+        raise
     except ModelRateLimitError as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
         repo.record_generation_observation(
@@ -160,6 +190,8 @@ def create_generation(
         "prompt_version": settings.prompt_version,
         "safety_policy_version": settings.safety_policy_version,
         "prompt_hash": compute_prompt_hash(prompt_text),
+        "preview_mode": preview_mode,
+        "send_image_to_provider": send_image,
     }
     generation = repo.create_generation(
         actor_id=actor.actor_id,
@@ -187,7 +219,7 @@ def create_generation(
     for concept, asset in zip(concepts_payload, batch.assets, strict=False):
         content = asset.content
         extension = asset.extension
-        if scar_mask_bytes and upload_bytes:
+        if preview_mode != "inpaint" and scar_mask_bytes and upload_bytes:
             # Render the result as an overlay on the user's own photo for scar-aware personalization.
             try:
                 content = render_tattoo_overlay_preview(

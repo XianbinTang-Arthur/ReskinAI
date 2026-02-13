@@ -41,6 +41,7 @@ const state = {
   const generationHintEl = document.getElementById("generation-hint");
   const maskStatusTextEl = document.getElementById("mask-status-text");
   const maskSkipCheckboxEl = document.getElementById("mask-skip-checkbox");
+  const inpaintCheckboxEl = document.getElementById("inpaint-checkbox");
 const clientStepButtons = [...document.querySelectorAll("#client-stepper .step-btn")];
 const clientStepPanels = [...document.querySelectorAll("#user-panel .step-panel")];
 const artistStepButtons = [...document.querySelectorAll("#artist-stepper .step-btn")];
@@ -766,6 +767,9 @@ function setupUserFlow() {
       if (maskSkipCheckboxEl) {
         maskSkipCheckboxEl.checked = false;
       }
+      if (inpaintCheckboxEl) {
+        inpaintCheckboxEl.checked = false;
+      }
       updateMaskStatus();
       state.user.pendingUploadFile = null;
       setUploadFileLabel("PNG, JPG, WEBP");
@@ -809,10 +813,13 @@ function setupUserFlow() {
     try {
       const token = requireToken("user");
       const form = new FormData(event.currentTarget);
+      const inpaintOptIn = Boolean(inpaintCheckboxEl && inpaintCheckboxEl.checked);
       const payload = {
         upload_id: String(form.get("upload_id") || state.user.uploadId),
         preference_id: String(form.get("preference_id") || state.user.preferenceId),
         variant_count: Number(form.get("variant_count") || 1),
+        preview_mode: inpaintOptIn ? "inpaint" : "overlay",
+        send_image_to_provider: Boolean(inpaintOptIn),
       };
       if (!payload.upload_id || !payload.preference_id) {
         throw new Error("Upload ID and Preference ID are required.");
@@ -822,6 +829,11 @@ function setupUserFlow() {
       if (!state.user.maskSaved && !skipMask) {
         setActiveClientStep("upload");
         showToast("Please mark the scar area first (recommended), then generate.", "error");
+        return;
+      }
+      if (inpaintOptIn && !state.user.maskSaved) {
+        setActiveClientStep("upload");
+        showToast("Photo-realistic preview requires a saved scar area mask.", "error");
         return;
       }
 

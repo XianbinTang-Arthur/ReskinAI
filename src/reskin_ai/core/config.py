@@ -35,10 +35,13 @@ class Settings:
     model_provider: str = os.getenv("MODEL_PROVIDER", "auto").lower()
     model_fallback_enabled: bool = _bool_env("MODEL_FALLBACK_ENABLED", True)
     model_retry_attempts: int = int(os.getenv("MODEL_RETRY_ATTEMPTS", "1"))
-    model_request_timeout_seconds: int = int(os.getenv("MODEL_REQUEST_TIMEOUT_SECONDS", "45"))
+    # Image generation / edits can take longer than a typical HTTP request.
+    # Keep this below the nginx proxy_read_timeout (default 120s in our template).
+    model_request_timeout_seconds: int = int(os.getenv("MODEL_REQUEST_TIMEOUT_SECONDS", "110"))
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     openai_image_model: str = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+    openai_edit_model: str = os.getenv("OPENAI_EDIT_MODEL", "dall-e-2")
     openai_image_size: str = os.getenv("OPENAI_IMAGE_SIZE", "1024x1024")
 
     @property
