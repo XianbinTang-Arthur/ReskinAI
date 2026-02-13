@@ -43,6 +43,18 @@ class LocalStorageService:
             "checksum": checksum,
         }
 
+    def read_upload(self, *, local_path: str | None) -> bytes | None:
+        if not local_path:
+            return None
+        path = Path(local_path)
+        try:
+            path.relative_to(self.root)
+        except ValueError:
+            return None
+        if not path.exists() or not path.is_file():
+            return None
+        return path.read_bytes()
+
     def save_concept_asset(self, *, concept_id: str, content: bytes, extension: str) -> dict[str, str]:
         normalized_ext = extension.lower() if extension.startswith(".") else f".{extension.lower()}"
         if normalized_ext not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:

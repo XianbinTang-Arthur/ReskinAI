@@ -49,6 +49,8 @@ def create_generation(
             code="FORBIDDEN",
             message="Preference does not belong to current actor.",
         )
+    upload_bytes = storage.read_upload(local_path=upload.get("local_path"))
+    upload_content_type = str(upload.get("content_type", "")) or None
     variant_count = min(payload.variant_count, settings.max_generation_variants)
     prompt_text = build_prompt_text(preference)
     safety_result = safety_engine.evaluate(prompt_text)
@@ -70,7 +72,12 @@ def create_generation(
         )
 
     try:
-        batch = model_provider.generate(prompt_text=prompt_text, variant_count=variant_count)
+        batch = model_provider.generate(
+            prompt_text=prompt_text,
+            variant_count=variant_count,
+            input_image=upload_bytes,
+            input_content_type=upload_content_type,
+        )
     except ModelGenerationError as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
         repo.record_generation_observation(

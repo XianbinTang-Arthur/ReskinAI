@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Protocol
 from urllib import error, request
@@ -52,6 +53,8 @@ class BaseModelProvider(Protocol):
         *,
         prompt_text: str,
         variant_count: int,
+        input_image: bytes | None = None,
+        input_content_type: str | None = None,
     ) -> list[GeneratedAsset]:
         ...
 
@@ -79,7 +82,14 @@ class LocalSvgProvider:
 </svg>"""
         return body.encode("utf-8")
 
-    def generate(self, *, prompt_text: str, variant_count: int) -> list[GeneratedAsset]:
+    def generate(
+        self,
+        *,
+        prompt_text: str,
+        variant_count: int,
+        input_image: bytes | None = None,
+        input_content_type: str | None = None,
+    ) -> list[GeneratedAsset]:
         return [
             GeneratedAsset(content=self._build_svg(prompt_text, variant_index=index), extension=".svg")
             for index in range(1, variant_count + 1)
@@ -105,33 +115,112 @@ class OpenAIImageProvider:
         self.timeout_seconds = timeout_seconds
         self.model_version = image_model
 
+    @staticmethod
+    def _guess_extension(content_type: str | None) -> str:
+        normalized = (content_type or "").lower().strip()
+        if normalized == "image/jpeg":
+            return ".jpg"
+        if normalized == "image/png":
+            return ".png"
+        if normalized == "image/webp":
+            return ".webp"
+        return ".png"
+
+    @staticmethod
+    def _encode_multipart(
+        *,
+        fields: dict[str, str],
+        files: list[tuple[str, str, str, bytes]],
+    ) -> tuple[bytes, str]:
+        boundary = f"----reskinai-{uuid.uuid4().hex}"
+        body = bytearray()
+        boundary_bytes = boundary.encode("ascii")
+
+        for name, value in fields.items():
+            body.extend(b"--" + boundary_bytes + b"\r\n")
+            body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.extend(value.encode("utf-8"))
+            body.extend(b"\r\n")
+
+        for field_name, filename, content_type, content in files:
+            body.extend(b"--" + boundary_bytes + b"\r\n")
+            body.extend(
+                (
+                    f'Content-Disposition: form-data; name="{field_name}"; '
+                    f'filename="{filename}"\r\n'
+                ).encode()
+            )
+            body.extend(f"Content-Type: {content_type}\r\n\r\n".encode())
+            body.extend(content)
+            body.extend(b"\r\n")
+
+        body.extend(b"--" + boundary_bytes + b"--\r\n")
+        return bytes(body), f"multipart/form-data; boundary={boundary}"
+
     def _download_image_bytes(self, image_url: str) -> bytes:
         req = request.Request(image_url, method="GET")
         with request.urlopen(req, timeout=self.timeout_seconds) as resp:
             return resp.read()
 
-    def generate(self, *, prompt_text: str, variant_count: int) -> list[GeneratedAsset]:
-        payload = {
-            "model": self.image_model,
-            "prompt": (
-                "Scar-aware tattoo concept for emotional healing. Keep it elegant and safe. "
-                "No violent symbols, no text overlays. "
-                f"Personalization input: {prompt_text}"
-            ),
-            "size": self.image_size,
-            "n": variant_count,
-            "response_format": "b64_json",
-        }
-        data = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            url=f"{self.base_url}/images/generations",
-            data=data,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+    def generate(
+        self,
+        *,
+        prompt_text: str,
+        variant_count: int,
+        input_image: bytes | None = None,
+        input_content_type: str | None = None,
+    ) -> list[GeneratedAsset]:
+        prompt = (
+            "Scar-aware tattoo concept for emotional healing. Keep it elegant and safe. "
+            "No violent symbols, no text overlays. "
+            f"Personalization input: {prompt_text}"
         )
+
+        if input_image:
+            extension = self._guess_extension(input_content_type)
+            body, content_type = self._encode_multipart(
+                fields={
+                    "model": self.image_model,
+                    "prompt": prompt,
+                    "size": self.image_size,
+                    "n": str(variant_count),
+                    "input_fidelity": "high",
+                },
+                files=[
+                    (
+                        "image",
+                        f"upload{extension}",
+                        input_content_type or "image/png",
+                        input_image,
+                    )
+                ],
+            )
+            req = request.Request(
+                url=f"{self.base_url}/images/edits",
+                data=body,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": content_type,
+                },
+            )
+        else:
+            payload = {
+                "model": self.image_model,
+                "prompt": prompt,
+                "size": self.image_size,
+                "n": variant_count,
+            }
+            data = json.dumps(payload).encode("utf-8")
+            req = request.Request(
+                url=f"{self.base_url}/images/generations",
+                data=data,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as resp:
                 body = resp.read().decode("utf-8")
@@ -179,9 +268,21 @@ class ResilientModelProvider:
         self.retry_attempts = max(0, retry_attempts)
         self.fallback_enabled = fallback_enabled
 
-    def generate(self, *, prompt_text: str, variant_count: int) -> GenerationBatch:
+    def generate(
+        self,
+        *,
+        prompt_text: str,
+        variant_count: int,
+        input_image: bytes | None = None,
+        input_content_type: str | None = None,
+    ) -> GenerationBatch:
         if self.primary is None:
-            assets = self.fallback.generate(prompt_text=prompt_text, variant_count=variant_count)
+            assets = self.fallback.generate(
+                prompt_text=prompt_text,
+                variant_count=variant_count,
+                input_image=input_image,
+                input_content_type=input_content_type,
+            )
             return GenerationBatch(
                 assets=assets,
                 provider=self.fallback.provider_name,
@@ -197,7 +298,12 @@ class ResilientModelProvider:
         last_error: Exception | None = None
         for attempt in range(max_attempts):
             try:
-                assets = self.primary.generate(prompt_text=prompt_text, variant_count=variant_count)
+                assets = self.primary.generate(
+                    prompt_text=prompt_text,
+                    variant_count=variant_count,
+                    input_image=input_image,
+                    input_content_type=input_content_type,
+                )
                 return GenerationBatch(
                     assets=assets,
                     provider=self.primary.provider_name,
@@ -219,7 +325,12 @@ class ResilientModelProvider:
 
         if self.fallback_enabled:
             logger.warning("Falling back to local model provider after primary failure.")
-            assets = self.fallback.generate(prompt_text=prompt_text, variant_count=variant_count)
+            assets = self.fallback.generate(
+                prompt_text=prompt_text,
+                variant_count=variant_count,
+                input_image=input_image,
+                input_content_type=input_content_type,
+            )
             return GenerationBatch(
                 assets=assets,
                 provider=self.fallback.provider_name,

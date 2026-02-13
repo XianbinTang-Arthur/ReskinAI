@@ -50,6 +50,28 @@ set MODEL_FALLBACK_ENABLED=true
 
 If OpenAI fails, the API records retry/failure metrics and can fall back to local rendering for service continuity.
 
+### One-command OpenAI verification (Windows PowerShell)
+
+This script performs a full API e2e check:
+- starts/restarts `uvicorn` with `MODEL_PROVIDER=openai`
+- forces `MODEL_FALLBACK_ENABLED=false` to avoid false-positive local fallback
+- runs `consent -> upload -> preference -> generation`
+- verifies generated concept is not `.svg`
+- verifies admin metric `last_generation_provider=openai`
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { .\deploy\local\verify_openai_e2e.ps1 }"
+```
+
+Requirements:
+- `OPENAI_API_KEY` is set in your current shell
+- `.venv\Scripts\python.exe` exists
+
+Useful flags:
+- `-UseExistingServer` (do not restart server)
+- `-KeepServer` (if script starts server, do not stop it in the end)
+- `-BaseUrl http://127.0.0.1:8000`
+
 ## Quick start flow
 
 1. Create a `user` session at `POST /api/v1/auth/session`.
