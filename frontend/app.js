@@ -1,4 +1,4 @@
-﻿const state = {
+const state = {
   user: {
     token: "",
     actorId: "",
@@ -11,6 +11,8 @@
     collaborationStatus: "",
     pendingUploadFile: null,
     conceptsById: {},
+    maskSaved: false,
+    maskUri: "",
   },
   artist: {
     token: "",
@@ -34,6 +36,11 @@
   const maskMetaEl = document.getElementById("mask-meta");
   const generationLoadingEl = document.getElementById("generation-loading");
   const generateBtn = document.getElementById("generate-btn");
+  const generationElapsedEl = document.getElementById("generation-elapsed");
+  const generationCancelBtn = document.getElementById("generation-cancel-btn");
+  const generationHintEl = document.getElementById("generation-hint");
+  const maskStatusTextEl = document.getElementById("mask-status-text");
+  const maskSkipCheckboxEl = document.getElementById("mask-skip-checkbox");
 const clientStepButtons = [...document.querySelectorAll("#client-stepper .step-btn")];
 const clientStepPanels = [...document.querySelectorAll("#user-panel .step-panel")];
 const artistStepButtons = [...document.querySelectorAll("#artist-stepper .step-btn")];
@@ -296,6 +303,71 @@ async function request(path, { method = "GET", token = "", json = undefined, for
     throw new Error(`${response.status} ${code}: ${message}`);
   }
   return payload;
+}
+
+function formatSeconds(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
+
+async function requestWithTimeout(
+  path,
+  { method = "GET", token = "", json = undefined, formData = undefined, timeoutMs = 130000, signal = undefined } = {},
+) {
+  const controller = new AbortController();
+  const linked = signal;
+  const onAbort = () => controller.abort();
+  if (linked) {
+    if (linked.aborted) {
+      controller.abort();
+    } else {
+      linked.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+  const timerId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const options = { method, headers: {}, signal: controller.signal };
+    if (token) {
+      options.headers.Authorization = `Bearer ${token}`;
+    }
+    if (json !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(json);
+    }
+    if (formData) {
+      options.body = formData;
+    }
+    const response = await fetch(path, options);
+    const raw = await response.text();
+    let payload = null;
+    if (raw) {
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        payload = raw;
+      }
+    }
+    if (!response.ok) {
+      const code = payload && typeof payload === "object" ? payload.code || "API_ERROR" : "API_ERROR";
+      const message =
+        payload && typeof payload === "object" ? payload.message || response.statusText : response.statusText;
+      const details = payload && typeof payload === "object" ? payload.details : null;
+      const error = new Error(`${response.status} ${code}: ${message}`);
+      error.details = details;
+      throw error;
+    }
+    return payload;
+  } finally {
+    window.clearTimeout(timerId);
+    if (linked) {
+      linked.removeEventListener("abort", onAbort);
+    }
+  }
 }
 
 function renderConcepts(concepts) {
@@ -611,6 +683,31 @@ function setupUserFlow() {
     return;
   }
 
+  let generationController = null;
+  let generationStartedAt = 0;
+  let generationTickTimerId = 0;
+
+  function updateMaskStatus() {
+    if (!maskStatusTextEl) {
+      return;
+    }
+    if (state.user.maskSaved && state.user.maskUri) {
+      maskStatusTextEl.textContent = "Saved.";
+    } else {
+      maskStatusTextEl.textContent = "Not marked yet.";
+    }
+  }
+
+  updateMaskStatus();
+
+  if (generationCancelBtn) {
+    generationCancelBtn.addEventListener("click", () => {
+      if (generationController) {
+        generationController.abort();
+      }
+    });
+  }
+
   userSessionBtn.addEventListener("click", async () => {
     try {
       const session = await createSession("user");
@@ -664,14 +761,20 @@ function setupUserFlow() {
       const upload = await request("/api/v1/uploads/file", { method: "POST", token, formData: payload });
       state.user.uploadId = upload.id;
       state.user.uploadStorageUri = upload.storage_uri;
+      state.user.maskSaved = false;
+      state.user.maskUri = "";
+      if (maskSkipCheckboxEl) {
+        maskSkipCheckboxEl.checked = false;
+      }
+      updateMaskStatus();
       state.user.pendingUploadFile = null;
       setUploadFileLabel("PNG, JPG, WEBP");
       setInputValue("generate-form", "upload_id", upload.id);
       setMeta("upload-meta", `upload_id=${upload.id}\nuri=${upload.storage_uri}`);
       refreshFlowProgress();
       initMaskEditor(upload.storage_uri, upload.id);
-      setActiveClientStep("preference");
-      showToast("Scar image uploaded.");
+      setActiveClientStep("upload");
+      showToast("Uploaded. Mark the scar area (recommended), then continue.", "info");
     } catch (error) {
       showToast(error.message, "error");
     }
@@ -714,8 +817,41 @@ function setupUserFlow() {
       if (!payload.upload_id || !payload.preference_id) {
         throw new Error("Upload ID and Preference ID are required.");
       }
+
+      const skipMask = Boolean(maskSkipCheckboxEl && maskSkipCheckboxEl.checked);
+      if (!state.user.maskSaved && !skipMask) {
+        setActiveClientStep("upload");
+        showToast("Please mark the scar area first (recommended), then generate.", "error");
+        return;
+      }
+
       setGenerating(true);
-      const generation = await request("/api/v1/generations", { method: "POST", token, json: payload });
+      generationController = new AbortController();
+      generationStartedAt = Date.now();
+      if (generationElapsedEl) {
+        generationElapsedEl.textContent = "0s";
+      }
+      if (generationHintEl) {
+        generationHintEl.textContent = "This can take 20 to 90 seconds. Please do not refresh or click repeatedly.";
+      }
+      window.clearInterval(generationTickTimerId);
+      generationTickTimerId = window.setInterval(() => {
+        const elapsed = (Date.now() - generationStartedAt) / 1000;
+        if (generationElapsedEl) {
+          generationElapsedEl.textContent = formatSeconds(elapsed);
+        }
+        if (generationHintEl && elapsed > 40) {
+          generationHintEl.textContent = "Still working. If this feels slow, you can cancel and try again later.";
+        }
+      }, 1000);
+
+      const generation = await requestWithTimeout("/api/v1/generations", {
+        method: "POST",
+        token,
+        json: payload,
+        timeoutMs: 130000,
+        signal: generationController.signal,
+      });
       state.user.generationId = generation.id;
       state.user.conceptIds = generation.concepts.map((item) => item.id);
       setInputValue("invite-form", "concept_ids", state.user.conceptIds.join(","));
@@ -728,9 +864,28 @@ function setupUserFlow() {
       setActiveClientStep("generation");
       showToast("Concept generation completed.");
     } catch (error) {
-      showToast(error.message, "error");
+      if (error && (error.name === "AbortError" || String(error.message || "").includes("AbortError"))) {
+        showToast("Generation canceled.", "error");
+      } else if (error && typeof error.message === "string" && error.message.includes("429 RATE_LIMITED")) {
+        const retryAfter = error.details && Number(error.details.retry_after_seconds || 0);
+        if (retryAfter > 0) {
+          showToast(`Rate limited. Try again in ~${retryAfter}s.`, "error");
+        } else {
+          showToast("Rate limited. Please wait and try again.", "error");
+        }
+      } else if (error && typeof error.message === "string" && error.message.includes("503")) {
+        showToast("Generation temporarily unavailable (503). Please wait and try again.", "error");
+      } else if (error && typeof error.message === "string" && error.message.includes("502")) {
+        showToast("Provider error (502). Please try again shortly.", "error");
+      } else if (error && (error.name === "TypeError" || String(error.message || "").includes("Failed to fetch"))) {
+        showToast("Network error. Please retry.", "error");
+      } else {
+        showToast(error.message, "error");
+      }
     } finally {
       setGenerating(false);
+      generationController = null;
+      window.clearInterval(generationTickTimerId);
     }
   });
 
@@ -741,6 +896,9 @@ function setupUserFlow() {
     if (generateBtn) {
       generateBtn.disabled = Boolean(active);
       generateBtn.textContent = active ? "Generating..." : "Generate Concepts";
+    }
+    if (generationCancelBtn) {
+      generationCancelBtn.disabled = !active;
     }
   }
 
@@ -846,7 +1004,15 @@ function setupUserFlow() {
         }
         const fd = new FormData();
         fd.append("file", blob, "scar_mask.png");
-        const result = await request(`/api/v1/uploads/${uploadId}/mask`, { method: "POST", token, formData: fd });
+        const result = await requestWithTimeout(`/api/v1/uploads/${uploadId}/mask`, {
+          method: "POST",
+          token,
+          formData: fd,
+          timeoutMs: 30000,
+        });
+        state.user.maskSaved = true;
+        state.user.maskUri = String(result.storage_uri || "");
+        updateMaskStatus();
         if (maskMetaEl) {
           maskMetaEl.textContent = `Saved. mask_uri=${result.storage_uri}`;
         }
@@ -1259,4 +1425,3 @@ function init() {
 }
 
 init();
-

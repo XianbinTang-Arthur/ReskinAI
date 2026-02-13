@@ -23,6 +23,8 @@ storage/
 *.db
 *.sqlite3
 uvicorn.log
+*.tar
+*.ppk
 
 # Environment files
 .env

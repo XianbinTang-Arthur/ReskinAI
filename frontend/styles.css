@@ -631,6 +631,25 @@ input:focus {
   background: rgba(255, 248, 251, 0.72);
 }
 
+.loading-copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.loading-title {
+  font-weight: 560;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.loading-elapsed {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  font-weight: 520;
+}
+
 .spinner {
   width: 18px;
   height: 18px;
@@ -718,6 +737,21 @@ input:focus {
 .pref-form > button {
   width: fit-content;
   margin-top: 0.9rem;
+}
+
+.callout {
+  margin: 0.7rem 0 1rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(255, 252, 254, 0.82);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.callout .subtle {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
 }
 
 .inline-form {

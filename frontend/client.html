@@ -160,6 +160,15 @@
 
         <article class="step-panel" id="step-generation">
           <h3>Concept Gallery</h3>
+          <div class="callout" id="mask-callout">
+            <strong>Scar placement:</strong>
+            <span id="mask-status-text">Not marked yet.</span>
+            <span class="hint">Marking the scar area makes concepts fit your body more accurately.</span>
+            <label class="inline subtle">
+              <input id="mask-skip-checkbox" type="checkbox" />
+              Continue without marking (not recommended)
+            </label>
+          </div>
           <form id="generate-form" class="inline-form">
             <div>
               <label>Upload ID</label>
@@ -177,7 +186,16 @@
           </form>
           <div class="loading-row" id="generation-loading" hidden>
             <span class="spinner" aria-hidden="true"></span>
-            <span class="hint">Generating. This can take 20 to 60 seconds. Please do not refresh or click repeatedly.</span>
+            <div class="loading-copy">
+              <div class="loading-title">
+                Generating concepts
+                <span class="loading-elapsed" id="generation-elapsed">0s</span>
+              </div>
+              <div class="hint" id="generation-hint">
+                This can take 20 to 90 seconds. Please do not refresh or click repeatedly.
+              </div>
+            </div>
+            <button class="btn ghost small" id="generation-cancel-btn" type="button">Cancel</button>
           </div>
           <p class="meta" id="generation-meta">No generation yet.</p>
           <div id="concept-grid" class="concept-grid"></div>
