@@ -37,6 +37,10 @@ body {
   min-height: 100%;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   background: linear-gradient(180deg, #fffbfd 0%, var(--bg) 100%);
   color: var(--ink);
@@ -196,7 +200,7 @@ h1 {
 
 .btn {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 14px;
   background: var(--accent);
   color: #fff;
   font: inherit;
@@ -219,6 +223,12 @@ h1 {
   transform: translateY(0);
 }
 
+.btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn.ghost {
   background: #fff;
   color: var(--ink);
@@ -230,7 +240,7 @@ h1 {
 }
 
 .btn.small {
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 0.38rem 0.64rem;
   font-size: 0.82rem;
 }

@@ -88,8 +88,12 @@
               <span class="upload-title">Drop image here or click to choose</span>
               <span class="upload-sub" id="upload-file-label">PNG, JPG, WEBP</span>
             </label>
-            <button class="btn" type="submit">Upload Image</button>
+            <button class="btn" id="upload-btn" type="submit">Upload Image</button>
           </form>
+          <div class="loading-row" id="upload-loading" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="hint">Uploading privately. Please wait.</span>
+          </div>
           <p class="meta" id="upload-meta">No upload yet.</p>
 
           <section class="mask-editor" id="mask-editor" hidden>

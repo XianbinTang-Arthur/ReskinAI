@@ -34,6 +34,8 @@ const state = {
   const maskClearBtn = document.getElementById("mask-clear-btn");
   const maskSaveBtn = document.getElementById("mask-save-btn");
   const maskMetaEl = document.getElementById("mask-meta");
+  const uploadLoadingEl = document.getElementById("upload-loading");
+  const uploadBtn = document.getElementById("upload-btn");
   const generationLoadingEl = document.getElementById("generation-loading");
   const generateBtn = document.getElementById("generate-btn");
   const generationElapsedEl = document.getElementById("generation-elapsed");
@@ -709,6 +711,16 @@ function setupUserFlow() {
     });
   }
 
+  function setUploading(active) {
+    if (uploadLoadingEl) {
+      uploadLoadingEl.hidden = !active;
+    }
+    if (uploadBtn) {
+      uploadBtn.disabled = Boolean(active);
+      uploadBtn.textContent = active ? "Uploading..." : "Upload Image";
+    }
+  }
+
   userSessionBtn.addEventListener("click", async () => {
     try {
       const session = await createSession("user");
@@ -759,6 +771,7 @@ function setupUserFlow() {
       const payload = new FormData();
       payload.append("consent_id", consentId);
       payload.append("file", file);
+      setUploading(true);
       const upload = await request("/api/v1/uploads/file", { method: "POST", token, formData: payload });
       state.user.uploadId = upload.id;
       state.user.uploadStorageUri = upload.storage_uri;
@@ -781,6 +794,8 @@ function setupUserFlow() {
       showToast("Uploaded. Mark the scar area (recommended), then continue.", "info");
     } catch (error) {
       showToast(error.message, "error");
+    } finally {
+      setUploading(false);
     }
   });
 
