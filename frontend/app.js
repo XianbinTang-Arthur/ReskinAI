@@ -71,6 +71,15 @@ let activeClientStep = "intake";
 let activeArtistStep = "session";
 let activeAdminStep = "session";
 
+// Defensive: ensure loading indicators are hidden on initial load even if the browser
+// renders cached HTML/CSS in a mixed state.
+if (uploadLoadingEl) {
+  uploadLoadingEl.hidden = true;
+}
+if (generationLoadingEl) {
+  generationLoadingEl.hidden = true;
+}
+
 function showToast(message, type = "info") {
   toastEl.textContent = message;
   toastEl.classList.add("show");
