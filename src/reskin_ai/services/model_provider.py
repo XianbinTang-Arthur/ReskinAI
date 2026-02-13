@@ -322,9 +322,16 @@ class OpenAIImageProvider:
         input_image: bytes | None = None,
         input_content_type: str | None = None,
     ) -> list[GeneratedAsset]:
+        # Important: our default production pipeline generates a "design asset" (not a photo edit)
+        # and then renders an ink preview over the user's image locally. To avoid "mosaic" overlays,
+        # we ask the model for clean linework on a plain background.
         prompt = (
-            "Skin-aware tattoo concept designed with dignity and calm. Keep it elegant and safe. "
-            "No violent symbols, no text overlays. "
+            "Design a tattoo concept as a clean stencil asset. "
+            "Style: elegant, calm, dignity-centered. "
+            "Output requirements: plain white background, black ink linework only, no shading, no gradients, "
+            "no skin texture, no photo background, no text, no watermark, no borders. "
+            "Center the design with comfortable margins. "
+            "Safety: no violence, no gore, no explicit content. "
             f"Personalization input: {prompt_text}"
         )
 

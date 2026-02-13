@@ -12,7 +12,7 @@ def render_tattoo_overlay_preview(
 ) -> bytes:
     # Pillow is optional for local dev (Windows Python 3.14 may not have wheels yet).
     # In production Docker we install the `render` extra.
-    from PIL import Image, ImageChops, ImageFilter, ImageOps  # type: ignore
+    from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps  # type: ignore
 
     def fit_within(size: tuple[int, int], edge: int) -> tuple[int, int]:
         w, h = size
@@ -40,6 +40,43 @@ def render_tattoo_overlay_preview(
         rgb = img_rgba.convert("RGB")
         out = Image.merge("RGBA", (*rgb.split(), alpha))
         return out
+
+    def crop_to_visible(img_rgba: Image.Image) -> Image.Image:
+        alpha = img_rgba.getchannel("A")
+        bbox = alpha.getbbox()
+        if bbox is None:
+            return img_rgba
+        x0, y0, x1, y1 = bbox
+        # Avoid overly tight crops that can clip strokes
+        pad = max(2, int(round(max(x1 - x0, y1 - y0) * 0.03)))
+        x0 = max(0, x0 - pad)
+        y0 = max(0, y0 - pad)
+        x1 = min(img_rgba.size[0], x1 + pad)
+        y1 = min(img_rgba.size[1], y1 + pad)
+        return img_rgba.crop((x0, y0, x1, y1))
+
+    def extract_ink_mask(img_rgba: Image.Image) -> Image.Image:
+        """
+        Convert a generated "design image" into a clean ink mask.
+        Goal: avoid mosaic-like background noise by keeping only dark strokes.
+        """
+        # Start from luminance so color backgrounds do not leak into alpha.
+        lum = ImageOps.grayscale(img_rgba)
+        lum = ImageOps.autocontrast(lum)
+
+        # Turn "dark pixels" into "ink" (higher = more ink).
+        ink = ImageOps.invert(lum)
+
+        # Suppress speckle noise and keep strokes.
+        ink = ink.filter(ImageFilter.MedianFilter(size=3))
+        ink = ImageEnhance.Contrast(ink).enhance(1.65)
+
+        # Hard-threshold low ink levels to avoid "smudged" look on skin.
+        ink = ink.point(lambda p: 0 if p < 36 else min(255, int((p - 28) * 1.35)))
+
+        # Slight blur makes edges feel more natural when blended.
+        ink = ink.filter(ImageFilter.GaussianBlur(radius=0.7))
+        return ink
 
     base = Image.open(io.BytesIO(base_image_bytes)).convert("RGBA")
     target_size = fit_within(base.size, edge=max_edge)
@@ -71,23 +108,35 @@ def render_tattoo_overlay_preview(
 
     tattoo = Image.open(io.BytesIO(tattoo_image_bytes)).convert("RGBA")
     tattoo = estimate_white_background_alpha(tattoo)
+    tattoo = crop_to_visible(tattoo)
+
+    # Convert arbitrary provider output into a clean "ink-only" layer.
+    ink_alpha = extract_ink_mask(tattoo)
 
     tw, th = tattoo.size
     scale = min(bw / tw, bh / th, 1.0)
     new_size = (max(1, int(round(tw * scale))), max(1, int(round(th * scale))))
     if new_size != tattoo.size:
         tattoo = tattoo.resize(new_size, resample=Image.Resampling.LANCZOS)
+        ink_alpha = ink_alpha.resize(new_size, resample=Image.Resampling.LANCZOS)
 
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    overlay_alpha = Image.new("L", base.size, 0)
     px = x0 + (bw - tattoo.size[0]) // 2
     py = y0 + (bh - tattoo.size[1]) // 2
-    overlay.paste(tattoo, (px, py), tattoo)
+    overlay_alpha.paste(ink_alpha, (px, py))
 
-    r, g, b, a = overlay.split()
-    a = ImageChops.multiply(a, soft_mask)
-    overlay = Image.merge("RGBA", (r, g, b, a))
+    # Respect the user's scar mask and keep the preview gentle.
+    overlay_alpha = ImageChops.multiply(overlay_alpha, soft_mask)
+    overlay_alpha = overlay_alpha.point(lambda p: min(255, int(p * 0.52)))
 
-    composed = Image.alpha_composite(base, overlay)
+    # Multiply blend for ink-on-skin feel:
+    # - Compute multiply(base, ink_color)
+    # - Composite it over base using overlay_alpha as mask
+    base_rgb = base.convert("RGB")
+    ink_color = Image.new("RGB", base.size, (44, 35, 40))  # warm deep ink
+    multiplied = ImageChops.multiply(base_rgb, ink_color)
+    composed_rgb = Image.composite(multiplied, base_rgb, overlay_alpha)
+    composed = composed_rgb.convert("RGBA")
     out = io.BytesIO()
     composed.save(out, format="PNG", optimize=True)
     return out.getvalue()
