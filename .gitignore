@@ -29,6 +29,7 @@ uvicorn.log
 # Environment files
 .env
 .env.*
+!.env.prod.example
 
 # IDE/editor local files
 .idea/vcs.xml
