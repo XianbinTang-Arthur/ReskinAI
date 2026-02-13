@@ -162,6 +162,66 @@ class OpenAIImageProvider:
         with request.urlopen(req, timeout=self.timeout_seconds) as resp:
             return resp.read()
 
+    @staticmethod
+    def _extract_openai_error_code(details: str) -> str | None:
+        try:
+            parsed = json.loads(details)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        err = parsed.get("error")
+        if not isinstance(err, dict):
+            return None
+        code = err.get("code")
+        if isinstance(code, str) and code.strip():
+            return code.strip()
+        return None
+
+    def _generate_without_image(self, *, prompt: str, variant_count: int) -> list[GeneratedAsset]:
+        payload = {
+            "model": self.image_model,
+            "prompt": prompt,
+            "size": self.image_size,
+            "n": variant_count,
+            # Prefer base64 to avoid handling expiring URLs.
+            "response_format": "b64_json",
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            url=f"{self.base_url}/images/generations",
+            data=data,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+            body = resp.read().decode("utf-8")
+        parsed = json.loads(body)
+        outputs = parsed.get("data", [])
+        if not isinstance(outputs, list) or not outputs:
+            raise RuntimeError("OpenAI image generation returned empty data payload.")
+
+        assets: list[GeneratedAsset] = []
+        for item in outputs:
+            if not isinstance(item, dict):
+                continue
+            b64_image = item.get("b64_json")
+            if isinstance(b64_image, str) and b64_image:
+                assets.append(GeneratedAsset(content=base64.b64decode(b64_image), extension=".png"))
+                continue
+            image_url = item.get("url")
+            if isinstance(image_url, str) and image_url:
+                assets.append(GeneratedAsset(content=self._download_image_bytes(image_url), extension=".png"))
+
+        if len(assets) < variant_count:
+            raise RuntimeError(
+                f"OpenAI image generation returned {len(assets)} images; expected {variant_count}.",
+            )
+        return assets[:variant_count]
+
     def generate(
         self,
         *,
@@ -171,7 +231,7 @@ class OpenAIImageProvider:
         input_content_type: str | None = None,
     ) -> list[GeneratedAsset]:
         prompt = (
-            "Scar-aware tattoo concept for emotional healing. Keep it elegant and safe. "
+            "Skin-aware tattoo concept designed with dignity and calm. Keep it elegant and safe. "
             "No violent symbols, no text overlays. "
             f"Personalization input: {prompt_text}"
         )
@@ -185,6 +245,7 @@ class OpenAIImageProvider:
                     "size": self.image_size,
                     "n": str(variant_count),
                     "input_fidelity": "high",
+                    "response_format": "b64_json",
                 },
                 files=[
                     (
@@ -205,27 +266,17 @@ class OpenAIImageProvider:
                 },
             )
         else:
-            payload = {
-                "model": self.image_model,
-                "prompt": prompt,
-                "size": self.image_size,
-                "n": variant_count,
-            }
-            data = json.dumps(payload).encode("utf-8")
-            req = request.Request(
-                url=f"{self.base_url}/images/generations",
-                data=data,
-                method="POST",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
+            return self._generate_without_image(prompt=prompt, variant_count=variant_count)
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as resp:
                 body = resp.read().decode("utf-8")
         except error.HTTPError as exc:
             details = exc.read().decode("utf-8", errors="ignore")
+            if input_image and exc.code == 400 and self._extract_openai_error_code(details) == "moderation_blocked":
+                # The uploaded photo may be flagged by the image safety system. For emotional-safety and privacy,
+                # automatically retry without sending the user's image.
+                logger.warning("OpenAI edits blocked by safety; retrying without user image.")
+                return self._generate_without_image(prompt=prompt, variant_count=variant_count)
             raise RuntimeError(f"OpenAI image generation failed: HTTP {exc.code} {details}") from exc
         except error.URLError as exc:
             raise RuntimeError(f"OpenAI image generation network failure: {exc.reason}") from exc
